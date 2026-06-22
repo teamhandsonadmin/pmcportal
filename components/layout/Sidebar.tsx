@@ -271,7 +271,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
           {!collapsed && (
             <span className="text-[13px] font-bold text-white tracking-tight whitespace-nowrap">
-              Work Portal
+              PMC Portal
             </span>
           )}
         </div>

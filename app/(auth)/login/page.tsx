@@ -23,7 +23,7 @@ export default async function LoginPage({ searchParams }: Props) {
               <path d="M3 21h18M3 7l9-4 9 4M4 7v14M20 7v14M9 21V11h6v10"/>
             </svg>
           </div>
-          <span className="text-[17px] font-semibold tracking-[-0.02em]">Work Portal</span>
+          <span className="text-[17px] font-semibold tracking-[-0.02em]">PMC Portal</span>
         </div>
 
         {/* Card */}

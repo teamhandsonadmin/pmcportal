@@ -158,7 +158,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           </div>
           {!collapsed && (
             <div>
-              <div className="text-[12.5px] font-bold text-white tracking-tight leading-tight">Work Portal</div>
+              <div className="text-[12.5px] font-bold text-white tracking-tight leading-tight">PMC Portal</div>
               <div className="text-[9.5px] text-white/40 font-medium leading-tight">Site Engineer</div>
             </div>
           )}

@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Work Portal",
+  title: "PMC Portal",
   description: "Construction Workflow Management System",
 };
 
