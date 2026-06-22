@@ -34,14 +34,8 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // Look up role for route enforcement
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('email', user.email!)
-    .single();
-
-  const role = profile?.role ?? 'admin';
+  // Read role from cookie set at login (avoids a DB call on every request)
+  const role = request.cookies.get('user_role')?.value ?? 'admin';
   const isSiteEngineer = role === 'site_engineer';
   const isSiteEngineerRoute = pathname.startsWith('/site-engineer');
 
