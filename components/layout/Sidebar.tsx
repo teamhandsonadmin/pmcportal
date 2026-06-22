@@ -2,7 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 
 /* ─── Icons ────────────────────────────────────────────────── */
 function Ico({ d, extra }: { d: string | string[]; extra?: React.ReactNode }) {
@@ -247,6 +248,13 @@ const SHAKE_CSS = `
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
 
   return (
     <aside
@@ -333,6 +341,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         style={{ borderTop: '1px solid #e5e7eb', padding: collapsed ? '8px 4px' : '8px 7px' }}
       >
         <button
+          onClick={handleLogout}
           className="flex items-center rounded-md w-full transition-colors duration-100"
           style={{
             gap:            collapsed ? 0 : '9px',

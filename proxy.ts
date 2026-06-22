@@ -34,9 +34,31 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
+  // Look up role for route enforcement
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('email', user.email!)
+    .single();
+
+  const role = profile?.role ?? 'admin';
+  const isSiteEngineer = role === 'site_engineer';
+  const isSiteEngineerRoute = pathname.startsWith('/site-engineer');
+
+  // Site engineer trying to access admin routes → redirect to their dashboard
+  if (isSiteEngineer && !isSiteEngineerRoute) {
+    return NextResponse.redirect(new URL('/site-engineer/works', request.url));
+  }
+
+  // Admin/senior trying to access site-engineer routes → redirect to admin dashboard
+  if (!isSiteEngineer && isSiteEngineerRoute) {
+    return NextResponse.redirect(new URL('/projects', request.url));
+  }
+
   return response;
 }
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };
+

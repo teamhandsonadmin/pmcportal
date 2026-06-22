@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 
 /* ─── Icons ─────────────────────────────────────────────────── */
 function Ico({ d, extra }: { d: string | string[]; extra?: React.ReactNode }) {
@@ -140,6 +141,13 @@ function NavItem({ item, collapsed, pathname }: {
 /* ─── Sidebar ────────────────────────────────────────────────── */
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
 
   return (
     <aside
@@ -195,6 +203,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       {/* Logout */}
       <div className="flex-shrink-0" style={{ borderTop: '1px solid #e5e7eb', padding: collapsed ? '8px 4px' : '8px 7px' }}>
         <button
+          onClick={handleLogout}
           className="flex items-center rounded-md w-full transition-colors duration-100"
           style={{
             gap: collapsed ? 0 : '9px',

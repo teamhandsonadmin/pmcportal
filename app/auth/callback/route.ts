@@ -15,5 +15,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(loginUrl, { status: 303 });
   }
 
+  // Look up role from user_profiles
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('email', email)
+    .single();
+
+  const role = profile?.role ?? 'admin';
+
+  if (role === 'site_engineer') {
+    return NextResponse.redirect(new URL('/site-engineer/works', request.url), { status: 303 });
+  }
+
   return NextResponse.redirect(new URL('/projects', request.url), { status: 303 });
 }
