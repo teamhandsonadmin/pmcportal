@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  admin
+  senior_site_engineer
+  site_engineer
+}
+
+enum UserStatus {
+  active
+  invited
+  disabled
+}
+
+enum TaskStatus {
+  draft
+  ready
+  in_progress
+  on_hold
+  blocked
+  completed
+}
+
+enum DependencyCategory {
+  architect
+  client
+  consultant
+  contractor
+  inspector
+}
+
+enum CompletionStatus {
+  pending
+  delivered
+  not_required
+}
+
+model UserProfile {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String     @unique
+  fullName  String     @map("full_name")
+  role      UserRole   @default(site_engineer)
+  status    UserStatus @default(invited)
+  phone     String?
+  isActive  Boolean    @default(true) @map("is_active")
+  lastLogin DateTime?  @map("last_login")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@map("user_profiles")
+}
+
+model Project {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @db.VarChar(200)
+  address   String?  @db.VarChar(500)
+  area      String?  @db.VarChar(50)
+  budget    String?  @db.VarChar(100)
+  photoUrl  String?  @map("photo_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  works     Work[]
+
+  @@map("projects")
+}
+
+model Work {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String     @db.VarChar(100)
+  code        String     @unique @db.VarChar(10)
+  description String?
+  color       String     @default("#6366F1") @db.VarChar(20)
+  projectId   String?    @map("project_id") @db.Uuid
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  project     Project?   @relation(fields: [projectId], references: [id])
+  tasks       HvacTask[]
+
+  @@map("works")
+}
+
+model HvacTask {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId      String     @unique @map("task_id") @db.VarChar(20)
+  taskName    String     @map("task_name")
+  projectName String     @map("project_name")
+  description String?
+  status      TaskStatus @default(draft)
+  assignedTo  String?    @map("assigned_to") @db.Uuid
+  createdBy   String?    @map("created_by") @db.Uuid
+  dueDate     DateTime?  @map("due_date") @db.Date
+  workId      String?    @map("work_id") @db.Uuid
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  work            Work?            @relation(fields: [workId], references: [id])
+  dependencyItems DependencyItem[]
+  activityLogs    ActivityLog[]
+
+  @@map("hvac_tasks")
+}
+
+model DependencyItem {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId      String             @map("task_id") @db.Uuid
+  category    DependencyCategory
+  itemLabel   String             @map("item_label")
+  isMandatory Boolean            @default(true) @map("is_mandatory")
+  sortOrder   Int                @default(0) @map("sort_order") @db.SmallInt
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  task       HvacTask             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  completion DependencyCompletion?
+
+  @@map("dependency_items")
+}
+
+model DependencyCompletion {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId      String           @unique @map("item_id") @db.Uuid
+  status      CompletionStatus @default(pending)
+  comment     String?
+  completedBy String?          @map("completed_by") @db.Uuid
+  completedAt DateTime?        @map("completed_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  item DependencyItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("dependency_completions")
+}
+
+model ActivityLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId     String?  @map("task_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  actionType String   @map("action_type") @db.VarChar(50)
+  payload    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  task HvacTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@map("activity_log")
+}
+
+model Holiday {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date        DateTime @unique @db.Date
+  name        String   @db.VarChar(200)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("holidays")
+}
