@@ -11,6 +11,14 @@ const CreateUserSchema = z.object({
   role:     z.enum(['senior_site_engineer', 'site_engineer']),
 });
 
+export async function getAssignableUsers() {
+  return prisma.userProfile.findMany({
+    where: { role: { in: ['site_engineer', 'senior_site_engineer'] }, status: 'active' },
+    select: { id: true, fullName: true, role: true },
+    orderBy: { fullName: 'asc' },
+  });
+}
+
 export async function createUser(_prev: unknown, formData: FormData) {
   const raw = {
     fullName: formData.get('fullName'),

@@ -73,7 +73,7 @@ export function OverallProgress({ progress }: DependencyProgressProps) {
       <div>
         <p className="text-sm font-semibold">Overall Progress</p>
         <p className="text-xs text-muted-foreground">
-          {progress.filter((p) => p.categoryComplete).length} of 4 categories complete
+          {progress.filter((p) => p.categoryComplete).length} of 5 categories complete
         </p>
       </div>
     </div>

@@ -43,8 +43,10 @@ export interface HvacTask {
   description: string | null;
   status: TaskStatus;
   createdBy: string | null;
+  assignedTo: string | null;
   workId: string | null;
   createdAt: Date;
+  plannedStartDate: Date | null;
   dueDate: Date | null;
   updatedAt: Date;
 }

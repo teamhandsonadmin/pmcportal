@@ -7,6 +7,7 @@ import { TaskFlowMap } from '@/components/tasks/TaskFlowMap';
 import { RecentActivityFeed } from '@/components/dashboard/RecentActivityFeed';
 import type { DashboardStats, HvacTask, CategoryProgress, ActivityEvent } from '@/lib/types/hvac';
 import { isItemDone } from '@/lib/types/hvac';
+import { isOverdue, calcOverallProgress } from '@/lib/utils/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ interface Props {
 }
 
 async function getWorkData(workId: string) {
-  const [work, tasks, activity, depItems] = await Promise.allSettled([
+  const [work, tasks, activity, depItems, users] = await Promise.allSettled([
     prisma.work.findUnique({ where: { id: workId } }),
     prisma.hvacTask.findMany({ where: { workId }, orderBy: { createdAt: 'asc' } }),
     prisma.activityLog.findMany({
@@ -27,13 +28,14 @@ async function getWorkData(workId: string) {
       where: { task: { workId } },
       include: { completion: true },
     }),
+    prisma.userProfile.findMany({ select: { id: true, fullName: true } }),
   ]);
-  return { work, tasks, activity, depItems };
+  return { work, tasks, activity, depItems, users };
 }
 
 export default async function WorkTaskListPage({ params }: Props) {
   const { workId } = await params;
-  const { work: workRes, tasks: tasksRes, activity: activityRes, depItems: depItemsRes } = await getWorkData(workId);
+  const { work: workRes, tasks: tasksRes, activity: activityRes, depItems: depItemsRes, users: usersRes } = await getWorkData(workId);
 
   const work = workRes.status === 'fulfilled' ? workRes.value : null;
   if (!work) notFound();
@@ -43,6 +45,7 @@ export default async function WorkTaskListPage({ params }: Props) {
     .filter((e) => e.taskId !== null)
     .map((e) => ({ ...e, taskId: e.taskId!, payload: e.payload as Record<string, unknown> | null, actionType: e.actionType as ActivityEvent['actionType'] }));
   const depItems = depItemsRes.status === 'fulfilled' ? depItemsRes.value : [];
+  const userMap = new Map((usersRes.status === 'fulfilled' ? usersRes.value : []).map((u) => [u.id, u.fullName]));
 
   const stats: DashboardStats = {
     readyCount:      tasks.filter((t) => t.status === 'ready').length,
@@ -69,7 +72,7 @@ export default async function WorkTaskListPage({ params }: Props) {
     const totalItems = progress.reduce((s, p) => s + p.totalItems, 0);
     const doneItems  = progress.reduce((s, p) => s + p.completedItems, 0);
     const pct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
-    return { id: t.id, taskId: t.taskId, taskName: t.taskName, status: t.status, completionPct: pct };
+    return { id: t.id, taskId: t.taskId, taskName: t.taskName, status: t.status, completionPct: pct, overdue: isOverdue(t.dueDate) };
   });
 
   return (
@@ -164,7 +167,12 @@ export default async function WorkTaskListPage({ params }: Props) {
                 <TaskListHeader />
                 <div>
                   {[...tasks].reverse().map((task) => (
-                    <TaskCard key={task.id} task={task} progress={taskProgress(task.id)} />
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      overallPct={calcOverallProgress(taskProgress(task.id))}
+                      assigneeName={task.assignedTo ? userMap.get(task.assignedTo) : null}
+                    />
                   ))}
                 </div>
               </>

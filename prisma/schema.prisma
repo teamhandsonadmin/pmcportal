@@ -95,6 +95,7 @@ model HvacTask {
   status      TaskStatus @default(draft)
   assignedTo  String?    @map("assigned_to") @db.Uuid
   createdBy   String?    @map("created_by") @db.Uuid
+  plannedStartDate DateTime? @map("planned_start_date") @db.Date
   dueDate     DateTime?  @map("due_date") @db.Date
   workId      String?    @map("work_id") @db.Uuid
   createdAt   DateTime   @default(now()) @map("created_at")
@@ -147,6 +148,16 @@ model ActivityLog {
   task HvacTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@map("activity_log")
+}
+
+model DependencyTemplateItem {
+  id        String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category  DependencyCategory
+  label     String
+  sortOrder Int                @default(0) @map("sort_order") @db.SmallInt
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  @@map("dependency_template_items")
 }
 
 model Holiday {

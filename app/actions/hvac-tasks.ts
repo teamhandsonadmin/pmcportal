@@ -5,7 +5,6 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { CreateTaskSchema, UpdateTaskStatusSchema } from '@/lib/validations/hvac';
 import type { ActionResult } from '@/lib/types/hvac';
-import { DEPENDENCY_DEFAULTS } from '@/lib/constants/dependency-defaults';
 
 export async function createHvacTask(
   _prevState: ActionResult<{ taskId: string }>,
@@ -18,20 +17,29 @@ export async function createHvacTask(
 
   let task;
   try {
-    // Use the work's code as the task ID prefix
+    // Use the work's code as the task ID prefix, and derive the project name from the work
     let prefix = 'WRK';
+    let projectName = 'Unassigned';
     try {
-      const work = await prisma.work.findUnique({ where: { id: parsed.data.work_id }, select: { code: true } });
-      if (work) prefix = work.code;
+      const work = await prisma.work.findUnique({
+        where: { id: parsed.data.work_id },
+        select: { code: true, project: { select: { name: true } } },
+      });
+      if (work) {
+        prefix = work.code;
+        if (work.project) projectName = work.project.name;
+      }
     } catch { /* fallback */ }
 
     task = await prisma.hvacTask.create({
       data: {
         taskId: `${prefix}-${Date.now().toString().slice(-6)}`,
         taskName: parsed.data.task_name,
-        projectName: parsed.data.project_name,
+        projectName,
         description: parsed.data.description ?? null,
+        plannedStartDate: parsed.data.planned_start_date ? new Date(parsed.data.planned_start_date) : null,
         dueDate: parsed.data.due_date ? new Date(parsed.data.due_date) : null,
+        assignedTo: parsed.data.assigned_to || null,
         workId: parsed.data.work_id,
       },
       select: { id: true, taskId: true },
@@ -40,20 +48,17 @@ export async function createHvacTask(
     return { success: false, error: 'Failed to create task. Please try again.' };
   }
 
-  // Auto-seed dependency checklist items for all 5 categories
-  const categories = Object.keys(DEPENDENCY_DEFAULTS) as Array<keyof typeof DEPENDENCY_DEFAULTS>;
-  for (const category of categories) {
-    const labels = DEPENDENCY_DEFAULTS[category];
-    for (let idx = 0; idx < labels.length; idx++) {
-      await prisma.dependencyItem.create({
-        data: {
-          taskId: task.id,
-          category: category,
-          itemLabel: labels[idx],
-          sortOrder: idx,
-        },
-      }).catch(() => {});
-    }
+  // Auto-seed dependency checklist items from the current template
+  const templateItems = await prisma.dependencyTemplateItem.findMany().catch(() => []);
+  if (templateItems.length > 0) {
+    await prisma.dependencyItem.createMany({
+      data: templateItems.map((ti) => ({
+        taskId: task.id,
+        category: ti.category,
+        itemLabel: ti.label,
+        sortOrder: ti.sortOrder,
+      })),
+    }).catch(() => {});
   }
 
   await prisma.activityLog.create({

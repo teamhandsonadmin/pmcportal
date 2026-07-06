@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
 import { TaskForm } from '@/components/hvac/TaskForm';
+import { getAssignableUsers } from '@/app/actions/users';
 
 interface Props {
   params: Promise<{ workId: string }>;
@@ -11,7 +12,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function NewWorkTaskPage({ params }: Props) {
   const { workId } = await params;
-  const work = await prisma.work.findUnique({ where: { id: workId }, select: { id: true, name: true, code: true, color: true } }).catch(() => null);
+  const [work, assignableUsers] = await Promise.all([
+    prisma.work.findUnique({ where: { id: workId }, select: { id: true, name: true, code: true, color: true } }).catch(() => null),
+    getAssignableUsers(),
+  ]);
   if (!work) notFound();
 
   return (
@@ -33,7 +37,7 @@ export default async function NewWorkTaskPage({ params }: Props) {
       </div>
 
       <div className="bg-card border border-border rounded-xl p-6 mt-6 card-shadow">
-        <TaskForm workId={work.id} />
+        <TaskForm workId={work.id} assignableUsers={assignableUsers} />
       </div>
     </div>
   );

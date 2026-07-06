@@ -15,6 +15,7 @@ interface FlowTask {
   taskName: string;
   status: string;
   completionPct: number;
+  overdue?: boolean;
 }
 
 interface TaskFlowMapProps {
@@ -26,15 +27,33 @@ export function TaskFlowMap({ tasks }: TaskFlowMapProps) {
     <div className="overflow-x-auto pb-2">
       <div className="flex items-center gap-0 min-w-max">
         {tasks.map((task, idx) => {
-          const cfg = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.draft;
+          const delayed = !!task.overdue && task.status !== 'completed';
+          const cfg = delayed
+            ? { label: 'Delayed', color: '#B45309', bg: '#FFFBEB', border: '#FDE68A', dot: '#F59E0B' }
+            : (STATUS_CONFIG[task.status] ?? STATUS_CONFIG.draft);
           return (
             <div key={task.id} className="flex items-center">
               {/* Task card */}
               <Link
                 href={`/hvac/${task.id}`}
-                className="group flex flex-col gap-2 w-44 rounded-lg border-2 p-3 transition-all hover:shadow-md hover:-translate-y-0.5"
-                style={{ borderColor: cfg.border, backgroundColor: cfg.bg }}
+                className="group relative flex flex-col gap-2 w-44 rounded-lg border-2 p-3 transition-all hover:shadow-md hover:-translate-y-0.5"
+                style={{
+                  borderColor: cfg.border,
+                  backgroundColor: cfg.bg,
+                  borderStyle: delayed ? 'dashed' : 'solid',
+                }}
               >
+                {/* Decision-point badge: task waiting on incomplete dependencies */}
+                {task.status === 'blocked' && (
+                  <span
+                    className="absolute -top-2 -right-2 flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold shadow-sm"
+                    style={{ backgroundColor: '#FEF2F2', color: '#DC2626', borderColor: '#FECACA' }}
+                    title="Waiting on incomplete dependencies"
+                  >
+                    ⬥ waiting
+                  </span>
+                )}
+
                 {/* Task ID + status dot */}
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[10.5px] font-bold" style={{ color: cfg.color }}>

@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { TrelloTaskDetail } from '@/components/hvac/TrelloTaskDetail';
 import { isLocked } from '@/lib/utils/status-rules';
-import { DEPENDENCY_DEFAULTS } from '@/lib/constants/dependency-defaults';
 import type { DependencyCategory, DependencyItem } from '@/lib/types/hvac';
 
 const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'inspector'];
@@ -30,23 +29,32 @@ export default async function TaskDetailPage({ params }: Props) {
 
   if (!task) notFound();
 
+  const assignee = task.assignedTo
+    ? await prisma.userProfile.findUnique({
+        where: { id: task.assignedTo },
+        select: { fullName: true, role: true },
+      }).catch(() => null)
+    : null;
+
   // Auto-seed dependency items for tasks that have none (e.g. created before seeding was added)
   let seedItems = rawItems;
   if (rawItems.length === 0) {
-    const categories = Object.keys(DEPENDENCY_DEFAULTS) as Array<keyof typeof DEPENDENCY_DEFAULTS>;
-    for (const category of categories) {
-      const labels = DEPENDENCY_DEFAULTS[category];
-      for (let idx = 0; idx < labels.length; idx++) {
-        await prisma.dependencyItem.create({
-          data: { taskId, category, itemLabel: labels[idx], sortOrder: idx },
-        }).catch(() => {});
-      }
+    const templateItems = await prisma.dependencyTemplateItem.findMany().catch(() => []);
+    if (templateItems.length > 0) {
+      await prisma.dependencyItem.createMany({
+        data: templateItems.map((ti) => ({
+          taskId,
+          category: ti.category,
+          itemLabel: ti.label,
+          sortOrder: ti.sortOrder,
+        })),
+      }).catch(() => {});
+      seedItems = await prisma.dependencyItem.findMany({
+        where: { taskId },
+        include: { completion: true },
+        orderBy: { sortOrder: 'asc' },
+      });
     }
-    seedItems = await prisma.dependencyItem.findMany({
-      where: { taskId },
-      include: { completion: true },
-      orderBy: { sortOrder: 'asc' },
-    });
   }
 
   const items: DependencyItem[] = seedItems.map((item) => ({
@@ -81,10 +89,12 @@ export default async function TaskDetailPage({ params }: Props) {
         projectName: task.projectName,
         description: task.description,
         status: task.status,
+        plannedStartDate: task.plannedStartDate,
         dueDate: task.dueDate,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
         work: task.work,
+        assignee: assignee ? { fullName: assignee.fullName, role: assignee.role } : null,
       }}
       items={items}
       categories={CATEGORIES}

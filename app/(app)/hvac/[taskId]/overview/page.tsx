@@ -97,7 +97,7 @@ export default async function TaskOverviewPage({ params }: Props) {
             )}
             {task.status === 'draft' && (
               <p className="text-xs text-muted-foreground mt-2">
-                Complete all 4 dependency categories to move to Ready.
+                Complete all 5 dependency categories to move to Ready.
               </p>
             )}
           </div>

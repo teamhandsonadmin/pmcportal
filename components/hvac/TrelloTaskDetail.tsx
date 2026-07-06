@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { updateDependencyCompletion } from '@/app/actions/dependencies';
 import { TaskStatusControl } from '@/components/hvac/TaskStatusControl';
+import { BlockedDependencyModal } from '@/components/hvac/BlockedDependencyModal';
 import type { DependencyCategory, DependencyItem, CompletionStatus, TaskStatus } from '@/lib/types/hvac';
 import { isItemDone } from '@/lib/types/hvac';
 
@@ -172,18 +173,22 @@ function ChecklistCard({ category, items, taskId, locked }: { category: Dependen
 /* ── Main component ──────────────────────────────────────── */
 interface TaskData {
   id: string; taskId: string; taskName: string; projectName: string;
-  description: string | null; status: string; dueDate: Date | null;
+  description: string | null; status: string;
+  plannedStartDate: Date | null; dueDate: Date | null;
   createdAt: Date; updatedAt: Date;
   work: { id: string; name: string; color: string; code: string } | null;
+  assignee: { fullName: string; role: string } | null;
 }
 
-const PEOPLE = [
-  { initials: 'AD', name: 'Admin',     role: 'Project Lead' },
-  { initials: 'SE', name: 'Site Eng.', role: 'Site Engineer' },
-  { initials: 'AR', name: 'Architect', role: 'Architect' },
-];
+const ROLE_LABEL: Record<string, string> = {
+  admin: 'Admin',
+  senior_site_engineer: 'Sr. Site Engineer',
+  site_engineer: 'Site Engineer',
+};
 
-const PEOPLE_COLORS = ['#111111', '#374151', '#6b7280'];
+function initials(name: string) {
+  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+}
 
 export function TrelloTaskDetail({ task, items, categories, locked }: {
   task: TaskData; items: DependencyItem[]; categories: DependencyCategory[]; locked: boolean;
@@ -270,22 +275,24 @@ export function TrelloTaskDetail({ task, items, categories, locked }: {
         {/* Sidebar (1/3) */}
         <div className="space-y-4">
 
-          {/* People */}
+          {/* Assignee */}
           <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-4">People Involved</h3>
-            <div className="space-y-3">
-              {PEOPLE.map((p, i) => (
-                <div key={p.initials} className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0" style={{ backgroundColor: PEOPLE_COLORS[i] }}>
-                    {p.initials}
-                  </div>
-                  <div>
-                    <div className="text-[12.5px] font-semibold text-gray-800">{p.name}</div>
-                    <div className="text-[11px] text-gray-400">{p.role}</div>
-                  </div>
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-4">Assigned To</h3>
+            {task.assignee ? (
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0" style={{ backgroundColor: '#111111' }}>
+                  {initials(task.assignee.fullName)}
                 </div>
-              ))}
-            </div>
+                <div>
+                  <div className="text-[12.5px] font-semibold text-gray-800">{task.assignee.fullName}</div>
+                  <div className="text-[11px] text-gray-400">{ROLE_LABEL[task.assignee.role] ?? task.assignee.role}</div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[12px] text-gray-400">
+                Unassigned — <Link href="/access" className="underline hover:text-gray-700">add a site engineer</Link> to assign this task.
+              </p>
+            )}
           </div>
 
           {/* Status control */}
@@ -297,7 +304,12 @@ export function TrelloTaskDetail({ task, items, categories, locked }: {
                 <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">Complete all dependency categories to move to Ready.</p>
               )}
               {task.status === 'blocked' && (
-                <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">Task is blocked — clear all pending dependency items.</p>
+                <div className="mt-3">
+                  <p className="text-[11px] text-gray-500 mb-2 leading-relaxed">
+                    Task is blocked — clear all pending dependency items to move it to Ready.
+                  </p>
+                  <BlockedDependencyModal items={items} categories={categories} />
+                </div>
               )}
             </div>
           )}
@@ -340,9 +352,10 @@ export function TrelloTaskDetail({ task, items, categories, locked }: {
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Details</h3>
             <div className="space-y-2.5">
               {[
-                { label: 'Created',      value: fmt(task.createdAt) },
-                { label: 'Due Date',     value: fmt(task.dueDate) },
-                { label: 'Last Updated', value: fmt(task.updatedAt) },
+                { label: 'Created',        value: fmt(task.createdAt) },
+                { label: 'Planned Start',  value: fmt(task.plannedStartDate) },
+                { label: 'Due Date',       value: fmt(task.dueDate) },
+                { label: 'Last Updated',   value: fmt(task.updatedAt) },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between">
                   <span className="text-[12px] text-gray-500">{row.label}</span>

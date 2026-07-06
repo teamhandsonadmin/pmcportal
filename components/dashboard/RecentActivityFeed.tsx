@@ -19,7 +19,12 @@ function eventSummary(event: ActivityEvent): string {
   switch (event.actionType) {
     case 'task_created':     return `Task ${p?.taskId ?? ''} created`;
     case 'status_change':    return `${STATUS_LABELS[(p?.from as TaskStatus) ?? 'draft']} → ${STATUS_LABELS[(p?.to as TaskStatus) ?? 'draft']}`;
-    case 'checklist_update': return `Item ${p?.completed ? 'completed' : 'unchecked'}`;
+    case 'checklist_update': {
+      const status = p?.status as string | undefined;
+      return status === 'delivered' ? 'Item marked delivered'
+        : status === 'not_required' ? 'Item marked not required'
+        : 'Item marked pending';
+    }
     case 'comment':          return `Comment added`;
     default:                 return 'Activity';
   }
