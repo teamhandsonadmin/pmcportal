@@ -1,8 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { TaskCard, TaskListHeader } from '@/components/hvac/TaskCard';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
+import type { ReactFlowInstance } from '@xyflow/react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { TaskDependencyGraph, type GraphEdgeInput } from '@/components/tasks/TaskDependencyGraph';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
 import type { TaskStatus } from '@/lib/types/hvac';
@@ -32,6 +34,39 @@ export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEd
   const [statusF, setStatusF] = useState<TaskStatus | ''>('');
   const [assigneeF, setAssigneeF] = useState('');
   const [projectF, setProjectF] = useState('');
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const rfInstanceRef = useRef<ReactFlowInstance | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [cssFallbackFullscreen, setCssFallbackFullscreen] = useState(false);
+  const showAsFullscreen = isFullscreen || cssFallbackFullscreen;
+
+  useEffect(() => {
+    function onFsChange() {
+      const active = document.fullscreenElement === containerRef.current;
+      setIsFullscreen(active);
+      if (active) requestAnimationFrame(() => rfInstanceRef.current?.fitView());
+    }
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  function toggleFullscreen() {
+    // Must be the first synchronous statement in the handler — requestFullscreen()
+    // requires transient user-activation, which is lost across any await/microtask.
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
+    if (containerRef.current?.requestFullscreen) {
+      containerRef.current.requestFullscreen().catch(() => {});
+    } else {
+      // iOS Safari and similar: Element.requestFullscreen() isn't supported —
+      // fall back to a CSS-only "maximize within viewport" treatment.
+      setCssFallbackFullscreen((v) => !v);
+      requestAnimationFrame(() => rfInstanceRef.current?.fitView());
+    }
+  }
 
   const workOptions = useMemo(() => [...new Map(rows.map((r) => [r.workCode, r.workName])).entries()], [rows]);
   const assigneeOptions = useMemo(
@@ -64,13 +99,15 @@ export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEd
   }, [filtered, edges]);
 
   return (
-    <Tabs defaultValue="list" className="flex-1 flex flex-col gap-4 min-h-0">
+    <div
+      ref={containerRef}
+      className={cn(
+        'flex-1 flex flex-col gap-3 min-h-0',
+        showAsFullscreen && 'bg-background p-4',
+        cssFallbackFullscreen && 'fixed inset-0 z-50'
+      )}
+    >
       <div className="flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
-        <TabsList variant="line">
-          <TabsTrigger value="list">List View</TabsTrigger>
-          <TabsTrigger value="flow">Flowchart View</TabsTrigger>
-        </TabsList>
-
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 max-w-xs">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -112,40 +149,23 @@ export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEd
               Clear filters
             </button>
           )}
+        </div>
 
+        <div className="flex items-center gap-2.5 flex-shrink-0">
           <span className="text-[11.5px] text-gray-400">{filtered.length} of {rows.length} tasks</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            onClick={toggleFullscreen}
+            title={showAsFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {showAsFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          </Button>
         </div>
       </div>
 
-      <TabsContent value="list" className="flex-1 min-h-0 overflow-y-auto">
-        {filtered.length === 0 ? (
-          <EmptyState hasFilter={hasFilter} onClear={clearFilters} />
-        ) : (
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
-            <TaskListHeader />
-            <div>
-              {filtered.map((row) => (
-                <TaskCard
-                  key={row.id}
-                  task={{
-                    id: row.id,
-                    taskId: row.taskId,
-                    taskName: row.taskName,
-                    projectName: row.projectName,
-                    status: row.status,
-                    plannedStartDate: row.plannedStartDate,
-                    dueDate: row.dueDate,
-                  }}
-                  overallPct={row.progressPct}
-                  assigneeName={row.assigneeName}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-      </TabsContent>
-
-      <TabsContent value="flow" className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-[480px]">
         {filtered.length === 0 ? (
           <EmptyState hasFilter={hasFilter} onClear={clearFilters} />
         ) : (
@@ -160,10 +180,12 @@ export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEd
               assigneeName: r.assigneeName,
             }))}
             edges={filteredEdges}
+            isFullscreen={showAsFullscreen}
+            onReady={(instance) => { rfInstanceRef.current = instance; }}
           />
         )}
-      </TabsContent>
-    </Tabs>
+      </div>
+    </div>
   );
 }
 

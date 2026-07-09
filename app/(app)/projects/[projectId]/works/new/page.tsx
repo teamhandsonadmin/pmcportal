@@ -28,7 +28,7 @@ export default async function NewWorkForProjectPage({ params }: { params: Promis
       />
       <div className="bg-card border border-border rounded-xl p-6 max-w-lg card-shadow">
         <p className="text-[13px] text-muted-foreground mb-6">
-          Adding a work to <strong>{project.name}</strong>. Works group related tasks with 5 dependency checklists each.
+          Adding a work to <strong>{project.name}</strong>. Works group related tasks with 6 dependency checklists each.
         </p>
         <WorkForm projectId={project.id} />
       </div>

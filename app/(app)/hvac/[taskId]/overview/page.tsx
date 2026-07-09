@@ -36,7 +36,7 @@ export default async function TaskOverviewPage({ params }: Props) {
 
   const locked = isLocked(task.status);
 
-  const categories = ['architect', 'client', 'consultant', 'contractor', 'inspector'] as const;
+  const categories = ['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'] as const;
   const progress: CategoryProgress[] = categories.map((cat) => {
     const items = depItems.filter((i) => i.category === cat);
     const completed = items.filter((i) => isItemDone(i.completion?.status as never)).length;
@@ -127,13 +127,13 @@ export default async function TaskOverviewPage({ params }: Props) {
             </h2>
             <TaskStatusControl taskId={taskId} currentStatus={task.status} />
             {task.status === 'blocked' && (
-              <p className="text-xs text-red-500 mt-2">
-                This task is blocked. Complete all dependency items to unlock it.
+              <p className="text-xs text-muted-foreground mt-2">
+                This task hasn&apos;t started yet. Complete all dependency items to unlock it.
               </p>
             )}
             {task.status === 'draft' && (
               <p className="text-xs text-muted-foreground mt-2">
-                Complete all 5 dependency categories to move to Ready.
+                Complete all 6 dependency categories to move to Ready.
               </p>
             )}
           </div>

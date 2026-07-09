@@ -89,7 +89,7 @@ export default async function WorkTaskListPage({ params }: Props) {
 
   function taskProgress(taskId: string): CategoryProgress[] {
     const taskItems = depItems.filter((i) => i.taskId === taskId);
-    const categories = ['architect', 'client', 'consultant', 'contractor', 'inspector'] as const;
+    const categories = ['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'] as const;
     return categories.map((cat) => {
       const catItems = taskItems.filter((i) => i.category === cat);
       const completed = catItems.filter((i) => isItemDone(i.completion?.status as never)).length;
@@ -253,7 +253,7 @@ export default async function WorkTaskListPage({ params }: Props) {
             <div className="p-5 space-y-3">
               {[
                 { label: 'On Track',  count: stats.readyCount + stats.inProgressCount },
-                { label: 'Blocked',   count: stats.blockedCount },
+                { label: 'Not Started', count: stats.blockedCount },
                 { label: 'Completed', count: stats.completedCount },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between">

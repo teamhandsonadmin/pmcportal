@@ -1,11 +1,10 @@
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { TrelloTaskDetail } from '@/components/hvac/TrelloTaskDetail';
-import { getTaskDependencyContext } from '@/app/actions/task-dependencies';
 import { isLocked } from '@/lib/utils/status-rules';
 import type { DependencyCategory, DependencyItem } from '@/lib/types/hvac';
 
-const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'inspector'];
+const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'];
 
 interface Props {
   params: Promise<{ taskId: string }>;
@@ -16,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export default async function TaskDetailPage({ params }: Props) {
   const { taskId } = await params;
 
-  const [task, rawItems, dependencyContext] = await Promise.all([
+  const [task, rawItems] = await Promise.all([
     prisma.hvacTask.findUnique({
       where: { id: taskId },
       include: { work: { select: { id: true, name: true, color: true, code: true } } },
@@ -26,7 +25,6 @@ export default async function TaskDetailPage({ params }: Props) {
       include: { completion: true },
       orderBy: { sortOrder: 'asc' },
     }),
-    getTaskDependencyContext(taskId),
   ]);
 
   if (!task) notFound();
@@ -101,7 +99,6 @@ export default async function TaskDetailPage({ params }: Props) {
       items={items}
       categories={CATEGORIES}
       locked={locked}
-      dependencyContext={dependencyContext}
     />
   );
 }

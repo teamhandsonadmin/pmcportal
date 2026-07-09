@@ -4,7 +4,7 @@ import { DependencyChecklist } from '@/components/hvac/DependencyChecklist';
 import { isLocked } from '@/lib/utils/status-rules';
 import type { DependencyCategory, DependencyItem } from '@/lib/types/hvac';
 
-const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'inspector'];
+const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'];
 
 interface Props {
   params: Promise<{ taskId: string }>;

@@ -7,6 +7,7 @@ const CATEGORY_LABELS: Record<DependencyCategory, string> = {
   consultant: 'Consultant',
   contractor: 'Contractor',
   inspector:  'Inspector',
+  procurement: 'Procurement',
 };
 
 interface DependencyProgressProps {
@@ -16,7 +17,7 @@ interface DependencyProgressProps {
 export function DependencyProgress({ progress }: DependencyProgressProps) {
   return (
     <div className="space-y-3">
-      {(['architect', 'client', 'consultant', 'contractor', 'inspector'] as DependencyCategory[]).map((cat) => {
+      {(['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'] as DependencyCategory[]).map((cat) => {
         const data = progress.find((p) => p.category === cat);
         const pct = data?.completionPct ?? 0;
         const done = data?.completedItems ?? 0;
@@ -73,7 +74,7 @@ export function OverallProgress({ progress }: DependencyProgressProps) {
       <div>
         <p className="text-sm font-semibold">Overall Progress</p>
         <p className="text-xs text-muted-foreground">
-          {progress.filter((p) => p.categoryComplete).length} of 5 categories complete
+          {progress.filter((p) => p.categoryComplete).length} of {progress.length} categories complete
         </p>
       </div>
     </div>

@@ -117,7 +117,7 @@ export default async function DashboardPage() {
           { label: 'Total Tasks', value: totalTasks, sub: `${projects.reduce((s, p) => s + p.works.length, 0)} works tracked` },
           { label: 'Completed Tasks', value: completedTasks, sub: totalTasks > 0 ? `${Math.round((completedTasks / totalTasks) * 100)}% done rate` : 'No tasks yet' },
           { label: 'Tasks In Progress', value: inProgressTasks, sub: 'Active work items' },
-          { label: 'Delayed Tasks', value: delayedTasks, sub: blockedTasks > 0 ? `${blockedTasks} also blocked on deps` : 'Past due date' },
+          { label: 'Delayed Tasks', value: delayedTasks, sub: blockedTasks > 0 ? `${blockedTasks} also not started on deps` : 'Past due date' },
         ].map((s) => (
           <div key={s.label} className="rounded-2xl bg-white border border-gray-100 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
             <p className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wider mb-3">{s.label}</p>
@@ -165,7 +165,7 @@ export default async function DashboardPage() {
           </div>
           <span className="text-[30px] font-black text-gray-900 leading-none tabular-nums">{depCompletionPct}%</span>
           <p className="text-[11.5px] text-gray-400 mt-2">
-            {doneDepItems}/{totalDepItems} items cleared · {blockedTasks} task{blockedTasks === 1 ? '' : 's'} blocked
+            {doneDepItems}/{totalDepItems} items cleared · {blockedTasks} task{blockedTasks === 1 ? '' : 's'} not started
           </p>
         </div>
       </div>

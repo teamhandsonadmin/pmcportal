@@ -34,6 +34,7 @@ enum DependencyCategory {
   consultant
   contractor
   inspector
+  procurement
 }
 
 enum CompletionStatus {
@@ -86,10 +87,13 @@ model Project {
   area      String?  @db.VarChar(50)
   budget    String?  @db.VarChar(100)
   photoUrl  String?  @map("photo_url")
+  siteLatitude  Decimal? @map("site_latitude") @db.Decimal(10, 7)
+  siteLongitude Decimal? @map("site_longitude") @db.Decimal(10, 7)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   works     Work[]
   inventoryItems InventoryItem[]
+  attendanceRecords AttendanceRecord[]
 
   @@map("projects")
 }
@@ -133,6 +137,8 @@ model HvacTask {
   blocksDeps         TaskDependency[]    @relation("TaskBlocks")
 
   @@map("hvac_tasks")
+  @@index([workId])
+  @@index([status])
 }
 
 // Cross-trade task-to-task dependency, independent of the checklist system
@@ -168,6 +174,7 @@ model DependencyItem {
   completion DependencyCompletion?
 
   @@map("dependency_items")
+  @@index([taskId, category])
 }
 
 model DependencyCompletion {
@@ -195,6 +202,8 @@ model ActivityLog {
   task HvacTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@map("activity_log")
+  @@index([taskId])
+  @@index([createdAt])
 }
 
 model DependencyTemplateItem {
@@ -274,4 +283,37 @@ model InventoryTransaction {
 
   @@index([itemId])
   @@map("inventory_transactions")
+}
+
+enum AttendanceType {
+  CHECK_IN
+  CHECK_OUT
+}
+
+// Written by the mobile app via the Supabase client, not by this repo's own
+// server actions — this repo only owns the shape of the table. userId stays
+// a loose uuid (no FK), consistent with assignedTo/createdBy elsewhere in
+// this schema; resolve the name via a separate UserProfile lookup at read
+// time, same pattern used everywhere else.
+model AttendanceRecord {
+  id                     String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                 String         @map("user_id") @db.Uuid
+  projectId              String?        @map("project_id") @db.Uuid
+  project                Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  type                   AttendanceType
+  latitude               Decimal        @db.Decimal(10, 7)
+  longitude              Decimal        @db.Decimal(10, 7)
+  accuracyMeters         Decimal?       @map("accuracy_meters") @db.Decimal(6, 1)
+  distanceFromSiteMeters Decimal?       @map("distance_from_site_meters") @db.Decimal(8, 1)
+  isFlagged              Boolean        @default(false) @map("is_flagged")
+  flagReason             String?        @map("flag_reason")
+  mockLocationSuspected  Boolean?       @map("mock_location_suspected")
+  clientCapturedAt       DateTime       @map("client_captured_at")
+  serverReceivedAt       DateTime       @default(now()) @map("server_received_at")
+  reviewedAt             DateTime?      @map("reviewed_at")
+  reviewedBy             String?        @map("reviewed_by") @db.Uuid
+
+  @@map("attendance_records")
+  @@index([userId, clientCapturedAt])
+  @@index([projectId])
 }

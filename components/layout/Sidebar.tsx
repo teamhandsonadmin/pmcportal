@@ -108,31 +108,34 @@ const Icons = {
 
 /* ─── Nav structure ─────────────────────────────────────────── */
 const PINNED = [
-  { label: 'Critical Alerts', href: '/alerts', icon: Icons.Notifications, exact: false, badge: 6 },
+  { label: 'Critical Alerts', href: '/alerts', icon: Icons.Notifications, exact: false, badge: 6, disabled: true },
 ];
 
 const SECTIONS = [
   {
     label: 'Workspace',
     items: [
-      { label: 'Dashboard',               href: '/projects',    icon: Icons.Dashboard,     exact: true,  badge: 0 },
-      { label: 'Tasks & Works',           href: '/works',       icon: Icons.Tasks,         exact: false, badge: 0 },
-      { label: 'Inventory',               href: '/inventory',   icon: Icons.Inventory,     exact: false, badge: 0 },
-      { label: 'Dependencies',            href: '/hvac',        icon: Icons.Dependencies,  exact: false, badge: 0 },
-      { label: 'Schedule & Calendar',     href: '/calendar',    icon: Icons.Calendar,      exact: false, badge: 0 },
-      { label: 'Attendance',              href: '/attendance',  icon: Icons.Attendance,    exact: false, badge: 0 },
-      { label: 'Daily Progress Reports',  href: '/dpr',         icon: Icons.DPR,           exact: false, badge: 0 },
-      { label: 'Site Photos',             href: '/photos',      icon: Icons.Photos,        exact: false, badge: 0 },
-      { label: 'Documents',               href: '/documents',   icon: Icons.Documents,     exact: false, badge: 0 },
+      { label: 'Dashboard',               href: '/projects',    icon: Icons.Dashboard,     exact: true,  badge: 0, disabled: true },
+      {
+        label: 'Tasks & Works', href: '/works', icon: Icons.Tasks, exact: false, badge: 0,
+        children: [{ label: 'Flowchart', href: '/works/flowchart' }],
+      },
+      { label: 'Inventory',               href: '/inventory',   icon: Icons.Inventory,     exact: false, badge: 0, disabled: true },
+      { label: 'Dependencies',            href: '/hvac',        icon: Icons.Dependencies,  exact: false, badge: 0, disabled: true },
+      { label: 'Schedule & Calendar',     href: '/calendar',    icon: Icons.Calendar,      exact: false, badge: 0, disabled: true },
+      { label: 'Attendance',              href: '/attendance',  icon: Icons.Attendance,    exact: false, badge: 0, disabled: true },
+      { label: 'Daily Progress Reports',  href: '/dpr',         icon: Icons.DPR,           exact: false, badge: 0, disabled: true },
+      { label: 'Site Photos',             href: '/photos',      icon: Icons.Photos,        exact: false, badge: 0, disabled: true },
+      { label: 'Documents',               href: '/documents',   icon: Icons.Documents,     exact: false, badge: 0, disabled: true },
     ],
   },
   {
     label: 'Management',
     items: [
-      { label: 'Access & Roles',   href: '/access',         icon: Icons.Access,      exact: false, badge: 0 },
-      { label: 'Reports',          href: '/reports',        icon: Icons.Reports,     exact: false, badge: 0 },
-      { label: 'Project Health',   href: '/project-health', icon: Icons.Health,      exact: true,  badge: 0 },
-      { label: 'Score Cards',      href: '/scorecards',     icon: Icons.Scorecards,  exact: false, badge: 0 },
+      { label: 'Access & Roles',   href: '/access',         icon: Icons.Access,      exact: false, badge: 0, disabled: true },
+      { label: 'Reports',          href: '/reports',        icon: Icons.Reports,     exact: false, badge: 0, disabled: true },
+      { label: 'Project Health',   href: '/project-health', icon: Icons.Health,      exact: true,  badge: 0, disabled: true },
+      { label: 'Score Cards',      href: '/scorecards',     icon: Icons.Scorecards,  exact: false, badge: 0, disabled: true },
     ],
   },
   {
@@ -144,10 +147,16 @@ const SECTIONS = [
 ];
 
 /* ─── NavItem ────────────────────────────────────────────────── */
+interface NavItemData {
+  label: string; href: string; activeHref?: string; icon: () => React.JSX.Element;
+  exact: boolean; badge?: number; disabled?: boolean;
+  children?: { label: string; href: string }[];
+}
+
 function NavItem({
   item, collapsed, pathname,
 }: {
-  item: { label: string; href: string; activeHref?: string; icon: () => React.JSX.Element; exact: boolean; badge?: number; disabled?: boolean };
+  item: NavItemData;
   collapsed: boolean;
   pathname: string;
 }) {
@@ -228,8 +237,37 @@ function NavItem({
       </div>
   );
 
-  if (disabled) return <div title={collapsed ? item.label : undefined}>{inner}</div>;
-  return <Link href={item.href} title={collapsed ? item.label : undefined}>{inner}</Link>;
+  const link = disabled
+    ? <div title={collapsed ? item.label : undefined}>{inner}</div>
+    : <Link href={item.href} title={collapsed ? item.label : undefined}>{inner}</Link>;
+
+  if (!item.children || collapsed) return link;
+
+  return (
+    <>
+      {link}
+      {active && (
+        <div className="mt-0.5 ml-[26px] pl-2.5 border-l border-gray-200 space-y-0.5">
+          {item.children.map((child) => {
+            const childActive = pathname.startsWith(child.href);
+            return (
+              <Link
+                key={child.href}
+                href={child.href}
+                className="block rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors duration-100"
+                style={{
+                  background: childActive ? '#f3f4f6' : 'transparent',
+                  color: childActive ? '#111111' : '#6b7280',
+                }}
+              >
+                {child.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
 }
 
 /* ─── Sidebar ────────────────────────────────────────────────── */

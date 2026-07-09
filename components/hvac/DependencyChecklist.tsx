@@ -9,6 +9,7 @@ const CATEGORY_LABELS: Record<DependencyCategory, string> = {
   consultant: 'Consultant',
   contractor: 'Contractor',
   inspector:  'Inspector',
+  procurement: 'Procurement',
 };
 
 const CATEGORY_ICONS: Record<DependencyCategory, string> = {
@@ -17,6 +18,7 @@ const CATEGORY_ICONS: Record<DependencyCategory, string> = {
   consultant: '◎',
   contractor: '⬡',
   inspector:  '◷',
+  procurement: '▣',
 };
 
 interface DependencyChecklistProps {

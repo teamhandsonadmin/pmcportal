@@ -1,8 +1,11 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { UpdateProjectLocationSchema } from '@/lib/validations/projects';
+import type { ActionResult } from '@/lib/types/hvac';
 
 const CreateProjectSchema = z.object({
   name:     z.string().min(2).max(200),
@@ -38,4 +41,35 @@ export async function createProject(_prev: unknown, formData: FormData) {
   });
 
   redirect(`/projects/${project.id}`);
+}
+
+export async function updateProjectLocation(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const parsed = UpdateProjectLocationSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.flatten().fieldErrors as Record<string, string[]> };
+  }
+
+  const { projectId, siteLatitude, siteLongitude } = parsed.data;
+
+  try {
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { siteLatitude, siteLongitude },
+    });
+  } catch {
+    return { success: false, error: 'Failed to save site location.' };
+  }
+
+  await prisma.activityLog.create({
+    data: {
+      actionType: 'site_location_updated',
+      payload: { projectId, siteLatitude, siteLongitude },
+    },
+  }).catch(() => {});
+
+  revalidatePath(`/projects/${projectId}`);
+  return { success: true };
 }

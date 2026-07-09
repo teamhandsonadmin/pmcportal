@@ -1,32 +1,111 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import Link from 'next/link';
-import { updateDependencyCompletion } from '@/app/actions/dependencies';
-import { TaskStatusControl } from '@/components/hvac/TaskStatusControl';
-import { BlockedDependencyModal } from '@/components/hvac/BlockedDependencyModal';
-import { TaskDependencyCard } from '@/components/hvac/TaskDependencyCard';
-import type { TaskDependencyContext } from '@/app/actions/task-dependencies';
-import type { DependencyCategory, DependencyItem, CompletionStatus, TaskStatus } from '@/lib/types/hvac';
-import { isItemDone } from '@/lib/types/hvac';
+import { useEffect, useRef, useState, useTransition } from 'react';
+import {
+  addDependencyItem,
+  deleteDependencyItem,
+  updateDependencyCompletion,
+  updateDependencyItemLabel,
+} from '@/app/actions/dependencies';
+import type { DependencyCategory, DependencyItem, CompletionStatus } from '@/lib/types/hvac';
+import { CATEGORY_COLORS, isItemDone } from '@/lib/types/hvac';
 
-/* ── Category config — dark monochrome ───────────────────── */
-const CAT_CONFIG: Record<DependencyCategory, { label: string; color: string; bg: string; letter: string }> = {
-  architect:  { label: 'Architect',   color: '#111111', bg: '#f3f4f6', letter: 'A' },
-  client:     { label: 'Client',      color: '#1f2937', bg: '#f3f4f6', letter: 'C' },
-  consultant: { label: 'Consultant',  color: '#374151', bg: '#f9fafb', letter: 'Co' },
-  contractor: { label: 'Contractor',  color: '#4b5563', bg: '#f9fafb', letter: 'Cr' },
-  inspector:  { label: 'Vendor',      color: '#6b7280', bg: '#f9fafb', letter: 'V' },
+/* ── Status dropdown — three color-coded chip options, replacing the old
+   checkbox + separate N/A button. Selecting an option saves immediately. */
+const STATUS_CHIP: Record<CompletionStatus, { label: string; bg: string; text: string; dot: string }> = {
+  pending:      { label: 'Not Started',    bg: '#F3F4F6', text: '#4B5563', dot: '#9CA3AF' },
+  delivered:    { label: 'Completed',      bg: '#DCFCE7', text: '#15803D', dot: '#22C55E' },
+  not_required: { label: 'Not Applicable', bg: '#EDE9FE', text: '#6D28D9', dot: '#8B5CF6' },
 };
+const STATUS_ORDER: CompletionStatus[] = ['pending', 'delivered', 'not_required'];
 
-const STATUS_STYLE: Record<string, { label: string; bg: string; color: string; border: string }> = {
-  draft:       { label: 'Draft',       bg: '#f3f4f6', color: '#6b7280', border: '#e5e7eb' },
-  ready:       { label: 'Ready',       bg: '#e5e7eb', color: '#374151', border: '#d1d5db' },
-  in_progress: { label: 'In Progress', bg: '#111111', color: '#ffffff', border: '#111111' },
-  on_hold:     { label: 'On Hold',     bg: '#f3f4f6', color: '#374151', border: '#d1d5db' },
-  blocked:     { label: 'Blocked',     bg: '#1f2937', color: '#ffffff', border: '#1f2937' },
-  completed:   { label: 'Completed',   bg: '#374151', color: '#ffffff', border: '#374151' },
+function StatusDropdown({
+  status,
+  disabled,
+  onChange,
+}: {
+  status: CompletionStatus;
+  disabled: boolean;
+  onChange: (status: CompletionStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const cfg = STATUS_CHIP[status];
+
+  useEffect(() => {
+    if (!open) return;
+    function onOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative flex-shrink-0">
+      <button
+        onClick={() => !disabled && setOpen((v) => !v)}
+        disabled={disabled}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-opacity disabled:opacity-60"
+        style={{ backgroundColor: cfg.bg, color: cfg.text }}
+      >
+        <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ backgroundColor: cfg.dot }} />
+        {cfg.label}
+      </button>
+
+      {open && (
+        <div className="absolute z-10 top-full left-0 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+          {STATUS_ORDER.map((s) => {
+            const opt = STATUS_CHIP[s];
+            return (
+              <button
+                key={s}
+                onClick={() => { onChange(s); setOpen(false); }}
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 hover:bg-gray-50 transition-colors"
+              >
+                <span
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                  style={{ backgroundColor: opt.bg, color: opt.text }}
+                >
+                  <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ backgroundColor: opt.dot }} />
+                  {opt.label}
+                </span>
+                {s === status && (
+                  <svg className="ml-auto" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Category config — colored per category so each checklist is easy to
+   tell apart at a glance, reusing the same palette as the template editor. */
+const CAT_LABEL: Record<DependencyCategory, string> = {
+  architect: 'Architect',
+  client: 'Client',
+  consultant: 'Consultant',
+  contractor: 'Contractor',
+  inspector: 'Vendor',
+  procurement: 'Procurement',
 };
+const CAT_LETTER: Record<DependencyCategory, string> = {
+  architect: 'A',
+  client: 'C',
+  consultant: 'Co',
+  contractor: 'Cr',
+  inspector: 'V',
+  procurement: 'P',
+};
+function catConfig(category: DependencyCategory) {
+  const c = CATEGORY_COLORS[category];
+  return { label: CAT_LABEL[category], letter: CAT_LETTER[category], color: c.text, bg: c.bg };
+}
 
 /* ── Trello checkbox item ─────────────────────────────────── */
 function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskId: string; locked: boolean }) {
@@ -34,20 +113,32 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
   const [localStatus, setLocalStatus] = useState<CompletionStatus>(item.completion?.status ?? 'pending');
   const [showComment, setShowComment] = useState(false);
   const [comment, setComment] = useState(item.completion?.comment ?? '');
+  const [isEditing, setIsEditing] = useState(false);
+  const [labelText, setLabelText] = useState(item.itemLabel);
 
   const isDone = localStatus === 'delivered';
   const isNA   = localStatus === 'not_required';
 
-  function toggleCheck() {
-    if (locked || isPending) return;
-    const next: CompletionStatus = isDone ? 'pending' : 'delivered';
-    setLocalStatus(next);
-    startTransition(async () => { await updateDependencyCompletion(item.id, taskId, next, comment || null); });
+  function saveLabel() {
+    const trimmed = labelText.trim();
+    if (!trimmed || trimmed === item.itemLabel) {
+      setLabelText(item.itemLabel);
+      setIsEditing(false);
+      return;
+    }
+    startTransition(async () => {
+      await updateDependencyItemLabel(item.id, taskId, trimmed);
+      setIsEditing(false);
+    });
   }
 
-  function setNA() {
+  function remove() {
+    if (!window.confirm('Delete this checklist item?')) return;
+    startTransition(async () => { await deleteDependencyItem(item.id, taskId); });
+  }
+
+  function changeStatus(next: CompletionStatus) {
     if (locked || isPending) return;
-    const next: CompletionStatus = isNA ? 'pending' : 'not_required';
     setLocalStatus(next);
     startTransition(async () => { await updateDependencyCompletion(item.id, taskId, next, comment || null); });
   }
@@ -61,30 +152,27 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
 
   return (
     <div className={`flex items-start gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 group transition-colors ${isPending ? 'opacity-60' : ''}`}>
-      {/* Checkbox */}
-      <button
-        onClick={toggleCheck}
-        disabled={locked || isPending}
-        className="flex-shrink-0 w-[17px] h-[17px] mt-0.5 rounded border-2 flex items-center justify-center transition-all"
-        style={{
-          borderColor: isDone ? '#374151' : '#d1d5db',
-          backgroundColor: isDone ? '#374151' : 'transparent',
-        }}
-      >
-        {isDone && (
-          <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
-            <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        )}
-        {isNA && <span style={{ color: '#9ca3af', fontSize: '9px', lineHeight: 1 }}>—</span>}
-      </button>
+      <div className="mt-0.5">
+        <StatusDropdown status={localStatus} disabled={locked || isPending} onChange={changeStatus} />
+      </div>
 
       <div className="flex-1 min-w-0">
-        <span className={`text-[13px] leading-snug ${isDone || isNA ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-          {item.itemLabel}
-        </span>
+        {isEditing ? (
+          <input
+            value={labelText}
+            onChange={(e) => setLabelText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') { setLabelText(item.itemLabel); setIsEditing(false); } }}
+            onBlur={saveLabel}
+            autoFocus
+            className="w-full text-[13px] text-gray-800 outline-none border-b border-gray-300 bg-transparent pb-0.5"
+          />
+        ) : (
+          <span className={`text-[13px] leading-snug ${isDone || isNA ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+            {item.itemLabel}
+          </span>
+        )}
         {item.completion?.comment && !showComment && (
-          <p className="text-[11px] text-gray-400 italic mt-0.5">"{item.completion.comment}"</p>
+          <p className="text-[11px] text-gray-400 italic mt-0.5">&ldquo;{item.completion.comment}&rdquo;</p>
         )}
         {showComment && (
           <div className="mt-2 space-y-1.5">
@@ -103,18 +191,32 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
         )}
       </div>
 
-      {!locked && (
+      {!locked && !isEditing && (
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          <button
-            onClick={setNA}
-            className="text-[10px] font-medium px-1.5 py-0.5 rounded border transition-colors"
-            style={{ color: isNA ? '#374151' : '#9ca3af', borderColor: isNA ? '#9ca3af' : '#e5e7eb', backgroundColor: isNA ? '#f3f4f6' : 'transparent' }}
-          >N/A</button>
           {!showComment && (
             <button onClick={() => setShowComment(true)} className="text-[10px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-transparent hover:border-gray-200 transition-all">
               Note
             </button>
           )}
+          <button
+            onClick={() => setIsEditing(true)}
+            title="Edit item"
+            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          </button>
+          <button
+            onClick={remove}
+            title="Delete item"
+            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
+            </svg>
+          </button>
         </div>
       )}
     </div>
@@ -123,11 +225,30 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
 
 /* ── Checklist card ──────────────────────────────────────── */
 function ChecklistCard({ category, items, taskId, locked }: { category: DependencyCategory; items: DependencyItem[]; taskId: string; locked: boolean }) {
-  const cfg   = CAT_CONFIG[category];
+  const cfg   = catConfig(category);
   const done  = items.filter((i) => isItemDone(i.completion?.status)).length;
   const total = items.length;
   const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
   const allDone = done === total && total > 0;
+
+  const [isPending, startTransition] = useTransition();
+  const [isAdding, setIsAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const addRef = useRef<HTMLInputElement>(null);
+
+  function startAdd() {
+    setIsAdding(true);
+    setNewLabel('');
+    setTimeout(() => addRef.current?.focus(), 50);
+  }
+
+  function submitAdd() {
+    const trimmed = newLabel.trim();
+    if (!trimmed) { setIsAdding(false); return; }
+    startTransition(async () => { await addDependencyItem(taskId, category, trimmed); });
+    setIsAdding(false);
+    setNewLabel('');
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -160,12 +281,37 @@ function ChecklistCard({ category, items, taskId, locked }: { category: Dependen
 
       {/* Items */}
       <div className="px-4 py-2">
-        {items.length === 0 ? (
+        {items.length === 0 && !isAdding && (
           <p className="py-4 text-[12.5px] text-gray-400 text-center">No items in this category.</p>
-        ) : (
-          items.sort((a, b) => a.sortOrder - b.sortOrder).map((item) => (
-            <TrelloCheckItem key={item.id} item={item} taskId={taskId} locked={locked} />
-          ))
+        )}
+        {items.sort((a, b) => a.sortOrder - b.sortOrder).map((item) => (
+          <TrelloCheckItem key={item.id} item={item} taskId={taskId} locked={locked} />
+        ))}
+
+        {!locked && (
+          isAdding ? (
+            <div className="flex items-center gap-3 py-2.5 px-1">
+              <input
+                ref={addRef}
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') submitAdd(); if (e.key === 'Escape') setIsAdding(false); }}
+                onBlur={submitAdd}
+                placeholder="Type checklist item and press Enter…"
+                autoFocus
+                disabled={isPending}
+                className="flex-1 text-[13px] text-gray-800 outline-none border-b border-gray-300 bg-transparent pb-0.5 placeholder-gray-400"
+              />
+              <button onClick={() => setIsAdding(false)} className="text-[11px] text-gray-400 hover:text-gray-700">Cancel</button>
+            </div>
+          ) : (
+            <button
+              onClick={startAdd}
+              className="flex items-center gap-1.5 w-full py-2 px-1 text-left text-[12.5px] text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              <span className="text-[14px] leading-none">+</span> Add item…
+            </button>
+          )
         )}
       </div>
     </div>
@@ -173,6 +319,12 @@ function ChecklistCard({ category, items, taskId, locked }: { category: Dependen
 }
 
 /* ── Main component ──────────────────────────────────────── */
+// Deliberately minimal by request: just the 5-category checklist, nothing
+// else. Task identification (name/status/due date) is already shown by the
+// shared header in app/(app)/hvac/[taskId]/layout.tsx, which wraps this
+// page — repeating it here would be the "duplicate header" that was removed.
+// Status changes, prerequisite tasks, and progress summaries now live only
+// on the /overview sub-route.
 interface TaskData {
   id: string; taskId: string; taskName: string; projectName: string;
   description: string | null; status: string;
@@ -182,217 +334,20 @@ interface TaskData {
   assignee: { fullName: string; role: string } | null;
 }
 
-const ROLE_LABEL: Record<string, string> = {
-  admin: 'Admin',
-  senior_site_engineer: 'Sr. Site Engineer',
-  site_engineer: 'Site Engineer',
-};
-
-function initials(name: string) {
-  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-}
-
-export function TrelloTaskDetail({ task, items, categories, locked, dependencyContext }: {
+export function TrelloTaskDetail({ task, items, categories, locked }: {
   task: TaskData; items: DependencyItem[]; categories: DependencyCategory[]; locked: boolean;
-  dependencyContext: TaskDependencyContext;
 }) {
-  const allItems   = items.length;
-  const doneItems  = items.filter((i) => isItemDone(i.completion?.status)).length;
-  const overallPct = allItems > 0 ? Math.round((doneItems / allItems) * 100) : 0;
-  const statusStyle = STATUS_STYLE[task.status] ?? STATUS_STYLE.draft;
-
-  function fmt(d: Date | null) {
-    if (!d) return '—';
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
-
   return (
-    <div className="space-y-5">
-
-      {/* ── Header card ──────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)', borderLeft: '4px solid #111111' }}>
-        <div className="px-6 py-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              {/* Breadcrumb */}
-              <div className="flex items-center gap-2 mb-3">
-                <Link href="/works" className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors flex items-center gap-1">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                  All Works
-                </Link>
-                {task.work && (
-                  <>
-                    <span className="text-gray-300">/</span>
-                    <Link href={`/works/${task.work.id}`} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                      {task.work.name}
-                    </Link>
-                  </>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2.5 mb-2 flex-wrap">
-                <span className="text-[12px] font-bold font-mono text-gray-500">#{task.taskId}</span>
-                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border" style={{ backgroundColor: statusStyle.bg, color: statusStyle.color, borderColor: statusStyle.border }}>
-                  {statusStyle.label}
-                </span>
-                {locked && (
-                  <span className="text-[11px] font-semibold text-gray-700 bg-gray-100 border border-gray-300 px-2.5 py-1 rounded-full">
-                    Completed
-                  </span>
-                )}
-              </div>
-
-              <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">{task.taskName}</h1>
-              <p className="text-[13px] text-gray-500 mt-0.5">{task.projectName}</p>
-              {task.description && (
-                <p className="text-[13px] text-gray-500 mt-2 leading-relaxed max-w-2xl">{task.description}</p>
-              )}
-            </div>
-
-            {task.dueDate && (
-              <div className="flex-shrink-0 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-right">
-                <p className="text-[9.5px] uppercase tracking-widest text-gray-400 font-semibold mb-1">Due Date</p>
-                <p className="text-[13px] font-mono font-semibold text-gray-800">{fmt(task.dueDate)}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Checklists + sidebar ──────────────────────────── */}
-      <div className="grid grid-cols-3 gap-5">
-
-        {/* Checklists (2/3) */}
-        <div className="col-span-2 space-y-4">
-          {categories.map((cat) => (
-            <ChecklistCard
-              key={cat}
-              category={cat}
-              items={items.filter((i) => i.category === cat)}
-              taskId={task.id}
-              locked={locked}
-            />
-          ))}
-        </div>
-
-        {/* Sidebar (1/3) */}
-        <div className="space-y-4">
-
-          {/* Assignee */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-4">Assigned To</h3>
-            {task.assignee ? (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0" style={{ backgroundColor: '#111111' }}>
-                  {initials(task.assignee.fullName)}
-                </div>
-                <div>
-                  <div className="text-[12.5px] font-semibold text-gray-800">{task.assignee.fullName}</div>
-                  <div className="text-[11px] text-gray-400">{ROLE_LABEL[task.assignee.role] ?? task.assignee.role}</div>
-                </div>
-              </div>
-            ) : (
-              <p className="text-[12px] text-gray-400">
-                Unassigned — <Link href="/access" className="underline hover:text-gray-700">add a site engineer</Link> to assign this task.
-              </p>
-            )}
-          </div>
-
-          {/* Status control */}
-          {!locked && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Update Status</h3>
-              <TaskStatusControl taskId={task.id} currentStatus={task.status as TaskStatus} />
-              {task.status === 'draft' && (
-                <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">Complete all dependency categories to move to Ready.</p>
-              )}
-              {task.status === 'blocked' && (
-                <div className="mt-3">
-                  <p className="text-[11px] text-gray-500 mb-2 leading-relaxed">
-                    Task is blocked — clear all pending dependency items to move it to Ready.
-                  </p>
-                  <BlockedDependencyModal items={items} categories={categories} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Prerequisite tasks (cross-trade) */}
-          {(dependencyContext.prerequisites.length > 0 || !locked) && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Prerequisite Tasks</h3>
-              <TaskDependencyCard
-                taskId={task.id}
-                prerequisites={dependencyContext.prerequisites}
-                candidateTasks={dependencyContext.candidateTasks}
-                locked={locked}
-              />
-            </div>
-          )}
-
-          {/* Overall progress */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Overall Progress</h3>
-            <div className="flex items-end gap-2 mb-2.5">
-              <span className="text-[28px] font-bold text-gray-900 leading-none">{overallPct}%</span>
-              <span className="text-[12px] text-gray-400 mb-0.5">{doneItems}/{allItems} items</span>
-            </div>
-            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all duration-500 bg-gray-900" style={{ width: `${overallPct}%` }} />
-            </div>
-
-            {/* Per-category mini bars */}
-            <div className="mt-4 space-y-2.5">
-              {categories.map((cat) => {
-                const cfg      = CAT_CONFIG[cat];
-                const catItems = items.filter((i) => i.category === cat);
-                const catDone  = catItems.filter((i) => isItemDone(i.completion?.status)).length;
-                const catPct   = catItems.length > 0 ? Math.round((catDone / catItems.length) * 100) : 0;
-                return (
-                  <div key={cat}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] text-gray-500">{cfg.label}</span>
-                      <span className="text-[11px] font-semibold tabular-nums text-gray-700">{catPct}%</span>
-                    </div>
-                    <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all" style={{ width: `${catPct}%`, backgroundColor: cfg.color }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Dates / Details */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Details</h3>
-            <div className="space-y-2.5">
-              {[
-                { label: 'Created',        value: fmt(task.createdAt) },
-                { label: 'Planned Start',  value: fmt(task.plannedStartDate) },
-                { label: 'Due Date',       value: fmt(task.dueDate) },
-                { label: 'Last Updated',   value: fmt(task.updatedAt) },
-              ].map((row) => (
-                <div key={row.label} className="flex items-center justify-between">
-                  <span className="text-[12px] text-gray-500">{row.label}</span>
-                  <span className="text-[12px] font-mono text-gray-700">{row.value}</span>
-                </div>
-              ))}
-              {task.work && (
-                <div className="flex items-center justify-between pt-1 border-t border-gray-100 mt-1">
-                  <span className="text-[12px] text-gray-500">Work</span>
-                  <Link href={`/works/${task.work.id}`} className="flex items-center gap-1.5 hover:opacity-80 transition-opacity">
-                    <span className="w-4 h-4 rounded bg-gray-800 text-white text-[8px] font-bold flex items-center justify-center">
-                      {task.work.code.slice(0, 1)}
-                    </span>
-                    <span className="text-[12px] font-medium text-gray-700">{task.work.name}</span>
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="space-y-4">
+      {categories.map((cat) => (
+        <ChecklistCard
+          key={cat}
+          category={cat}
+          items={items.filter((i) => i.category === cat)}
+          taskId={task.id}
+          locked={locked}
+        />
+      ))}
     </div>
   );
 }

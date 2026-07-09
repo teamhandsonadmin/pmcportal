@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { isItemDone } from '@/lib/types/hvac';
+import { SiteLocationCard } from '@/components/projects/SiteLocationCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,7 @@ type Task = {
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
   in_progress: { label: 'Active',   bg: '#111111', color: '#ffffff' },
   completed:   { label: 'Done',     bg: '#374151', color: '#ffffff' },
-  blocked:     { label: 'Blocked',  bg: '#1f2937', color: '#ffffff' },
+  blocked:     { label: 'Not Started', bg: '#1f2937', color: '#ffffff' },
   ready:       { label: 'Ready',    bg: '#4b5563', color: '#ffffff' },
   draft:       { label: 'Draft',    bg: '#f3f4f6', color: '#6b7280' },
   on_hold:     { label: 'On Hold',  bg: '#374151', color: '#ffffff' },
@@ -244,7 +245,7 @@ export default async function ProjectDashboardPage({
               </svg>
             ),
             value: blockedTasks,
-            label: 'Blocked Tasks',
+            label: 'Not Started Tasks',
             trend: blockedTasks > 0 ? 'Needs attention' : 'All clear',
             trendPos: blockedTasks === 0,
           },
@@ -278,7 +279,7 @@ export default async function ProjectDashboardPage({
       </div>
 
       {/* ── Charts row ────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
 
         {/* Work Progress bar chart */}
         <div className="col-span-2 bg-white rounded-xl border border-gray-200 p-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -341,6 +342,12 @@ export default async function ProjectDashboardPage({
             </div>
           )}
         </div>
+
+        <SiteLocationCard
+          projectId={project.id}
+          initialLat={project.siteLatitude != null ? Number(project.siteLatitude) : null}
+          initialLng={project.siteLongitude != null ? Number(project.siteLongitude) : null}
+        />
       </div>
 
       {/* ── Task table ────────────────────────────────── */}

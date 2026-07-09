@@ -32,7 +32,7 @@ export const UpdateDependencySchema = z.object({
 
 export const CreateDependencyItemSchema = z.object({
   task_id: z.string().uuid(),
-  category: z.enum(['architect', 'client', 'consultant', 'contractor', 'inspector']),
+  category: z.enum(['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement']),
   item_label: z.string().min(3).max(300),
   is_mandatory: z.boolean().default(true),
   sort_order: z.number().int().min(0).default(0),
@@ -49,7 +49,7 @@ export const AddHolidaySchema = z.object({
 });
 
 export const AddTemplateItemSchema = z.object({
-  category: z.enum(['architect', 'client', 'consultant', 'contractor', 'inspector']),
+  category: z.enum(['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement']),
   label: z.string().min(2, 'Label must be at least 2 characters').max(200),
 });
 

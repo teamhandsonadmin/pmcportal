@@ -32,7 +32,7 @@ export default async function NewWorkTaskPage({ params }: Props) {
         </Link>
         <h1 className="text-[22px] font-semibold tracking-[-0.02em]">New Task</h1>
         <p className="text-[13px] text-muted-foreground mt-1">
-          Task will be created in <span className="font-medium text-foreground">{work.name}</span> with 5 dependency checklists auto-populated.
+          Task will be created in <span className="font-medium text-foreground">{work.name}</span> with 6 dependency checklists auto-populated.
         </p>
       </div>
 

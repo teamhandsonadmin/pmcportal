@@ -15,9 +15,9 @@
 -- ============================================================
 
 -- ── Status recalculation ──────────────────────────────────────
--- A task becomes "ready" once all 5 mandatory dependency categories are
+-- A task becomes "ready" once all 6 mandatory dependency categories are
 -- fully delivered (or explicitly marked not_required), and falls back to
--- "blocked" if it regresses. Tasks with fewer than 5 categories seeded
+-- "blocked" if it regresses. Tasks with fewer than 6 categories seeded
 -- stay in "draft". in_progress / on_hold / completed are never touched here
 -- — those are user-driven transitions (see app/actions/hvac-tasks.ts).
 CREATE OR REPLACE FUNCTION recalculate_task_status(p_task_id UUID)
@@ -36,14 +36,21 @@ BEGIN
   FROM dependency_items
   WHERE task_id = p_task_id AND is_mandatory = true;
 
-  IF v_cat_count < 5 THEN
+  IF v_cat_count < 6 THEN
     UPDATE hvac_tasks SET status = 'draft' WHERE id = p_task_id AND status <> 'draft';
     RETURN;
   END IF;
 
+  -- COALESCE the missing completion row to 'pending' before the IN check —
+  -- an item that has never been touched has no dependency_completions row
+  -- at all, so dc.status is NULL. BOOL_AND() silently skips NULL inputs
+  -- rather than treating them as false, so a category where every item is
+  -- still untouched was incorrectly reported as complete whenever it wasn't
+  -- the only category (the untouched-NULL rows just got ignored, not AND-ed
+  -- in as incomplete).
   SELECT COALESCE(BOOL_AND(cat_complete), false) INTO v_all_complete
   FROM (
-    SELECT di.category, BOOL_AND(dc.status IN ('delivered', 'not_required')) AS cat_complete
+    SELECT di.category, BOOL_AND(COALESCE(dc.status::text, 'pending') IN ('delivered', 'not_required')) AS cat_complete
     FROM dependency_items di
     LEFT JOIN dependency_completions dc ON dc.item_id = di.id
     WHERE di.task_id = p_task_id AND di.is_mandatory = true

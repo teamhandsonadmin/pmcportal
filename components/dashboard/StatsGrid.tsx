@@ -23,7 +23,7 @@ export function StatsGrid({ stats }: { stats: DashboardStats }) {
       <StatsCard label="Total Tasks"  value={stats.totalCount}       icon={<IconTotal />} />
       <StatsCard label="Ready"        value={stats.readyCount}       icon={<IconReady />}    description="All deps complete" />
       <StatsCard label="In Progress"  value={stats.inProgressCount}  icon={<IconProgress />} description="Currently active" />
-      <StatsCard label="Blocked"      value={stats.blockedCount}     icon={<IconBlocked />}  description="Awaiting deps" />
+      <StatsCard label="Not Started"  value={stats.blockedCount}     icon={<IconBlocked />}  description="Awaiting deps" />
       <StatsCard label="Completed"    value={stats.completedCount}   icon={<IconDone />}     description="Locked & done" />
     </div>
   );

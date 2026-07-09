@@ -22,13 +22,14 @@ export interface ProjectOption {
   name: string;
 }
 
-const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'inspector'];
+const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'];
 const CATEGORY_LABEL: Record<DependencyCategory, string> = {
   architect: 'Architect',
   client: 'Client',
   consultant: 'Consultant',
   contractor: 'Contractor',
   inspector: 'Vendor',
+  procurement: 'Procurement',
 };
 const CATEGORY_ICON: Record<DependencyCategory, string> = {
   architect: 'ARC',
@@ -36,6 +37,7 @@ const CATEGORY_ICON: Record<DependencyCategory, string> = {
   consultant: 'CON',
   contractor: 'CTR',
   inspector: 'VND',
+  procurement: 'PRC',
 };
 
 export function DependencyTemplateEditor({ items, projects }: { items: TemplateItem[]; projects: ProjectOption[] }) {
@@ -225,9 +227,9 @@ export function DependencyTemplateEditor({ items, projects }: { items: TemplateI
       {/* Summary */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-          <div className="text-[28px] font-extrabold text-gray-900 leading-none">5</div>
+          <div className="text-[28px] font-extrabold text-gray-900 leading-none">6</div>
           <div className="text-[12px] font-semibold text-gray-700 mt-1.5">Dependency Categories</div>
-          <div className="text-[11px] text-gray-400 mt-0.5">Architect, Client, Consultant, Contractor, Vendor</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">Architect, Client, Consultant, Contractor, Vendor, Procurement</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
           <div className="text-[28px] font-extrabold text-gray-900 leading-none">{totalItems}</div>

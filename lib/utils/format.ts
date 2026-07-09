@@ -38,6 +38,12 @@ export function isOverdue(dueDate: Date | string | null | undefined): boolean {
   return new Date(dueDate) < new Date();
 }
 
+export function formatDistanceMeters(meters: number | null | undefined): string {
+  if (meters == null) return '—';
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
 export function calcOverallProgress(
   categories: { completionPct: number }[]
 ): number {

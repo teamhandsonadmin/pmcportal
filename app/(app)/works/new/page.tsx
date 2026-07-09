@@ -16,7 +16,7 @@ export default function NewWorkPage() {
         </Link>
         <h1 className="text-[22px] font-semibold tracking-[-0.02em]">New Work</h1>
         <p className="text-[13px] text-muted-foreground mt-1">
-          A Work groups related tasks — e.g. HVAC, Electrical, Plumbing. Each task gets 5 dependency checklists with 5 items each.
+          A Work groups related tasks — e.g. HVAC, Electrical, Plumbing. Each task gets 6 dependency checklists with several items each.
         </p>
       </div>
 

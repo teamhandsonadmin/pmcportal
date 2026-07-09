@@ -5,7 +5,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   ready:       { label: 'Ready',       color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE', dot: '#3B82F6' },
   in_progress: { label: 'In Progress', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', dot: '#F59E0B' },
   on_hold:     { label: 'On Hold',     color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE', dot: '#8B5CF6' },
-  blocked:     { label: 'Blocked',     color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', dot: '#EF4444' },
+  blocked:     { label: 'Not Started', color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', dot: '#EF4444' },
   completed:   { label: 'Completed',   color: '#15803D', bg: '#F0FDF4', border: '#BBF7D0', dot: '#22C55E' },
 };
 
