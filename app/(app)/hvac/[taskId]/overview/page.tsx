@@ -2,6 +2,9 @@ import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { TaskStatusControl } from '@/components/hvac/TaskStatusControl';
 import { DependencyProgress, OverallProgress } from '@/components/hvac/DependencyProgress';
+import { SftProgressCard } from '@/components/hvac/SftProgressCard';
+import { TaskDependencyCard } from '@/components/hvac/TaskDependencyCard';
+import { getTaskDependencyContext } from '@/app/actions/task-dependencies';
 import { isLocked } from '@/lib/utils/status-rules';
 import { formatDate, formatDateTime } from '@/lib/utils/format';
 import type { CategoryProgress } from '@/lib/types/hvac';
@@ -16,12 +19,17 @@ export const dynamic = 'force-dynamic';
 export default async function TaskOverviewPage({ params }: Props) {
   const { taskId } = await params;
 
-  const [task, depItems] = await Promise.all([
+  const [task, depItems, sftEntries, dependencyContext] = await Promise.all([
     prisma.hvacTask.findUnique({ where: { id: taskId } }),
     prisma.dependencyItem.findMany({
       where: { taskId },
       include: { completion: true },
     }),
+    prisma.sftProgressEntry.findMany({
+      where: { taskId },
+      orderBy: { entryDate: 'desc' },
+    }),
+    getTaskDependencyContext(taskId),
   ]);
 
   if (!task) notFound();
@@ -44,8 +52,36 @@ export default async function TaskOverviewPage({ params }: Props) {
     };
   });
 
+  const sftEntryRows = sftEntries.map((e) => ({
+    id: e.id,
+    entryDate: e.entryDate,
+    sftCompleted: Number(e.sftCompleted),
+    headcount: e.headcount,
+    notes: e.notes,
+  }));
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div className="space-y-6">
+      <div className="border border-border rounded-lg p-4">
+        <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
+          Prerequisite Tasks
+        </h2>
+        <TaskDependencyCard
+          taskId={taskId}
+          prerequisites={dependencyContext.prerequisites}
+          candidateTasks={dependencyContext.candidateTasks}
+          locked={locked}
+        />
+      </div>
+
+      <SftProgressCard
+        taskId={taskId}
+        totalSft={task.totalSft != null ? Number(task.totalSft) : null}
+        entries={sftEntryRows}
+        locked={locked}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       {/* Task info */}
       <div className="space-y-6">
         <div>
@@ -123,6 +159,7 @@ export default async function TaskOverviewPage({ params }: Props) {
           </div>
           <DependencyProgress progress={progress} />
         </div>
+      </div>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TaskCard, TaskListHeader } from '@/components/hvac/TaskCard';
-import { TaskFlowMap } from '@/components/tasks/TaskFlowMap';
+import { TaskDependencyGraph, type GraphEdgeInput } from '@/components/tasks/TaskDependencyGraph';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
 import type { TaskStatus } from '@/lib/types/hvac';
 
@@ -21,11 +21,12 @@ export interface TaskRow {
   workId: string | null;
   workName: string;
   workCode: string;
+  workColor: string;
 }
 
 const STATUSES: TaskStatus[] = ['draft', 'ready', 'in_progress', 'on_hold', 'blocked', 'completed'];
 
-export function TasksExplorer({ rows }: { rows: TaskRow[] }) {
+export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEdgeInput[] }) {
   const [search, setSearch] = useState('');
   const [workF, setWorkF] = useState('');
   const [statusF, setStatusF] = useState<TaskStatus | ''>('');
@@ -57,15 +58,10 @@ export function TasksExplorer({ rows }: { rows: TaskRow[] }) {
   const hasFilter = !!(search || workF || statusF || assigneeF || projectF);
   const clearFilters = () => { setSearch(''); setWorkF(''); setStatusF(''); setAssigneeF(''); setProjectF(''); };
 
-  const groupedByWork = useMemo(() => {
-    const groups = new Map<string, { workName: string; workCode: string; rows: TaskRow[] }>();
-    for (const r of filtered) {
-      const key = r.workId ?? 'unassigned';
-      if (!groups.has(key)) groups.set(key, { workName: r.workName, workCode: r.workCode, rows: [] });
-      groups.get(key)!.rows.push(r);
-    }
-    return [...groups.values()];
-  }, [filtered]);
+  const filteredEdges = useMemo(() => {
+    const visibleIds = new Set(filtered.map((r) => r.id));
+    return edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target));
+  }, [filtered, edges]);
 
   return (
     <Tabs defaultValue="list" className="flex-1 flex flex-col gap-4 min-h-0">
@@ -149,32 +145,22 @@ export function TasksExplorer({ rows }: { rows: TaskRow[] }) {
         )}
       </TabsContent>
 
-      <TabsContent value="flow" className="flex-1 min-h-0 overflow-y-auto space-y-5">
+      <TabsContent value="flow" className="flex-1 min-h-0 overflow-y-auto">
         {filtered.length === 0 ? (
           <EmptyState hasFilter={hasFilter} onClear={clearFilters} />
         ) : (
-          groupedByWork.map((group) => (
-            <div key={group.workCode + group.workName} className="bg-card rounded-xl border border-border overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-                <h3 className="text-[13px] font-semibold">{group.workName}</h3>
-                <span className="text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded-md font-mono">
-                  {group.rows.length} {group.rows.length === 1 ? 'task' : 'tasks'}
-                </span>
-              </div>
-              <div className="p-5">
-                <TaskFlowMap
-                  tasks={group.rows.map((r) => ({
-                    id: r.id,
-                    taskId: r.taskId,
-                    taskName: r.taskName,
-                    status: r.status,
-                    completionPct: r.progressPct,
-                    overdue: r.overdue,
-                  }))}
-                />
-              </div>
-            </div>
-          ))
+          <TaskDependencyGraph
+            tasks={filtered.map((r) => ({
+              id: r.id,
+              taskId: r.taskId,
+              taskName: r.taskName,
+              status: r.status,
+              workCode: r.workCode,
+              workColor: r.workColor,
+              assigneeName: r.assigneeName,
+            }))}
+            edges={filteredEdges}
+          />
         )}
       </TabsContent>
     </Tabs>

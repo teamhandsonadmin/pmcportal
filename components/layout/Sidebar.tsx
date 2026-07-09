@@ -50,6 +50,11 @@ const Icons = {
       <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
     </svg>
   ),
+  Inventory:      () => (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 8L12 3 3 8l9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>
+    </svg>
+  ),
   Issues:         () => (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -112,6 +117,7 @@ const SECTIONS = [
     items: [
       { label: 'Dashboard',               href: '/projects',    icon: Icons.Dashboard,     exact: true,  badge: 0 },
       { label: 'Tasks & Works',           href: '/works',       icon: Icons.Tasks,         exact: false, badge: 0 },
+      { label: 'Inventory',               href: '/inventory',   icon: Icons.Inventory,     exact: false, badge: 0 },
       { label: 'Dependencies',            href: '/hvac',        icon: Icons.Dependencies,  exact: false, badge: 0 },
       { label: 'Schedule & Calendar',     href: '/calendar',    icon: Icons.Calendar,      exact: false, badge: 0 },
       { label: 'Attendance',              href: '/attendance',  icon: Icons.Attendance,    exact: false, badge: 0 },

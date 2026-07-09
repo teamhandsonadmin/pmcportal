@@ -9,7 +9,7 @@ import { isOverdue } from '@/lib/utils/format';
 export const dynamic = 'force-dynamic';
 
 export default async function WorksPage() {
-  const [tasks, works, users] = await Promise.all([
+  const [tasks, works, users, deps] = await Promise.all([
     prisma.hvacTask.findMany({
       include: {
         dependencyItems: { select: { completion: { select: { status: true } } } },
@@ -19,6 +19,11 @@ export default async function WorksPage() {
     }),
     prisma.work.findMany({ orderBy: { createdAt: 'asc' } }),
     prisma.userProfile.findMany({ select: { id: true, fullName: true } }),
+    // Global/unscoped, matching the tasks fetch above — there is no
+    // server-side "current project" concept on this page today (see
+    // CHANGELOG_TASK_DEPENDENCIES.md); the existing client-side project
+    // filter in TasksExplorer narrows what the graph shows.
+    prisma.taskDependency.findMany({ select: { id: true, taskId: true, dependsOnTaskId: true } }),
   ]);
 
   const userMap = new Map(users.map((u) => [u.id, u.fullName]));
@@ -50,8 +55,11 @@ export default async function WorksPage() {
       workId: t.workId,
       workName: t.work?.name ?? 'Unassigned',
       workCode: t.work?.code ?? '—',
+      workColor: t.work?.color ?? '#9CA3AF',
     };
   });
+
+  const edges = deps.map((d) => ({ id: d.id, source: d.dependsOnTaskId, target: d.taskId }));
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -86,7 +94,7 @@ export default async function WorksPage() {
         )}
       </div>
 
-      <TasksExplorer rows={rows} />
+      <TasksExplorer rows={rows} edges={edges} />
     </div>
   );
 }

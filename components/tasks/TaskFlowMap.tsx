@@ -9,6 +9,12 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   completed:   { label: 'Completed',   color: '#15803D', bg: '#F0FDF4', border: '#BBF7D0', dot: '#22C55E' },
 };
 
+interface ExternalPrereq {
+  taskId: string;
+  taskName: string;
+  workCode: string;
+}
+
 interface FlowTask {
   id: string;
   taskId: string;
@@ -16,6 +22,7 @@ interface FlowTask {
   status: string;
   completionPct: number;
   overdue?: boolean;
+  externalPrereqs?: ExternalPrereq[];
 }
 
 interface TaskFlowMapProps {
@@ -52,6 +59,19 @@ export function TaskFlowMap({ tasks }: TaskFlowMapProps) {
                   >
                     ⬥ waiting
                   </span>
+                )}
+
+                {/* Cross-trade prerequisite badge — links to the full graph on /works */}
+                {task.externalPrereqs && task.externalPrereqs.length > 0 && (
+                  <Link
+                    href="/works"
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute -top-2 -left-2 flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold shadow-sm hover:opacity-80"
+                    style={{ backgroundColor: '#F5F3FF', color: '#7C3AED', borderColor: '#DDD6FE' }}
+                    title={`Waiting on: ${task.externalPrereqs.map((p) => `${p.taskId} (${p.taskName}) — ${p.workCode}`).join(', ')}`}
+                  >
+                    ⇢ {task.externalPrereqs.length}
+                  </Link>
                 )}
 
                 {/* Task ID + status dot */}

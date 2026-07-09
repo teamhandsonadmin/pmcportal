@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { CreateTaskSchema, UpdateTaskStatusSchema } from '@/lib/validations/hvac';
+import { getBlockingPrerequisites } from '@/lib/utils/status-rules';
 import type { ActionResult } from '@/lib/types/hvac';
 
 export async function createHvacTask(
@@ -41,6 +42,7 @@ export async function createHvacTask(
         dueDate: parsed.data.due_date ? new Date(parsed.data.due_date) : null,
         assignedTo: parsed.data.assigned_to || null,
         workId: parsed.data.work_id,
+        totalSft: parsed.data.total_sft || null,
       },
       select: { id: true, taskId: true },
     });
@@ -95,8 +97,25 @@ export async function updateTaskStatus(
   if (!existing) return { success: false, error: 'Task not found' };
   if (existing.status === 'completed') return { success: false, error: 'Completed tasks are locked' };
 
-  if (parsed.data.status === 'in_progress' && existing.status !== 'ready') {
-    return { success: false, error: 'Task must be in Ready state before starting' };
+  if (parsed.data.status === 'in_progress') {
+    if (existing.status !== 'ready') {
+      return { success: false, error: 'Task must be in Ready state before starting' };
+    }
+
+    // Cross-trade gate — independent of the checklist system above. A task
+    // can be checklist-`ready` and still be waiting on another trade's task.
+    const prereqRows = await prisma.taskDependency.findMany({
+      where: { taskId },
+      select: {
+        dependsOnTask: { select: { id: true, taskId: true, taskName: true, status: true } },
+      },
+    }).catch(() => []);
+
+    const blockers = getBlockingPrerequisites(prereqRows.map((r) => r.dependsOnTask));
+    if (blockers.length > 0) {
+      const names = blockers.map((b) => `${b.taskId} (${b.taskName})`).join(', ');
+      return { success: false, error: `Blocked by: ${names} — not yet completed` };
+    }
   }
 
   try {

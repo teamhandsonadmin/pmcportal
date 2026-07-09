@@ -15,6 +15,20 @@ export type DependencyCategory =
 
 export type CompletionStatus = 'pending' | 'delivered' | 'not_required';
 
+export type InventoryUnit =
+  | 'PCS'
+  | 'KG'
+  | 'TON'
+  | 'BAG'
+  | 'LITRE'
+  | 'SQFT'
+  | 'CUBIC_M'
+  | 'BOX'
+  | 'ROLL'
+  | 'OTHER';
+
+export type InventoryTransactionType = 'IN' | 'OUT' | 'ADJUSTMENT';
+
 export const CATEGORY_COLORS: Record<DependencyCategory, {
   border: string; bg: string; text: string; badge: string; dot: string;
 }> = {
@@ -45,6 +59,7 @@ export interface HvacTask {
   createdBy: string | null;
   assignedTo: string | null;
   workId: string | null;
+  totalSft: number | null;
   createdAt: Date;
   plannedStartDate: Date | null;
   dueDate: Date | null;
@@ -85,7 +100,17 @@ export interface ActivityEvent {
   id: string;
   taskId: string;
   userId: string | null;
-  actionType: 'status_change' | 'checklist_update' | 'comment' | 'task_created';
+  actionType:
+    | 'status_change'
+    | 'checklist_update'
+    | 'comment'
+    | 'task_created'
+    | 'sft_progress_logged'
+    | 'sft_progress_deleted'
+    | 'sft_target_updated'
+    | 'inventory_item_created'
+    | 'inventory_transaction_recorded'
+    | 'inventory_ocr_intake';
   payload: Record<string, unknown> | null;
   createdAt: Date;
 }

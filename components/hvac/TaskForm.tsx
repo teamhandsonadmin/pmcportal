@@ -94,6 +94,16 @@ export function TaskForm({ workId, assignableUsers }: TaskFormProps) {
       </div>
 
       <div className="space-y-1.5">
+        <Label htmlFor="total_sft">
+          Total SFT (sq. ft.) <span className="text-muted-foreground">(optional)</span>
+        </Label>
+        <Input id="total_sft" name="total_sft" type="number" step="0.01" min="0" placeholder="e.g. 1200" />
+        {errors.total_sft && (
+          <p className="text-xs text-red-500">{errors.total_sft[0]}</p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
         <Label htmlFor="assigned_to">
           Assign to Site Engineer <span className="text-muted-foreground">(optional)</span>
         </Label>

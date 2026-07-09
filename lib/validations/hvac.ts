@@ -18,6 +18,7 @@ export const CreateTaskSchema = z.object({
     .nullable(),
   assigned_to: z.string().uuid('Invalid user').optional().nullable().or(z.literal('')),
   work_id: z.string().uuid('Invalid work ID'),
+  total_sft: z.coerce.number().min(0, 'Total SFT must be 0 or more').optional(),
 });
 
 export const UpdateTaskStatusSchema = z.object({
@@ -64,7 +65,22 @@ export const CreateWorkSchema = z.object({
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid color hex').default('#6366F1'),
 });
 
+export const CreateSftEntrySchema = z.object({
+  taskId: z.string().uuid(),
+  entryDate: z.coerce.date(),
+  sftCompleted: z.coerce.number().min(0, 'SFT completed must be 0 or more'),
+  headcount: z.coerce.number().int().min(0, 'Headcount must be 0 or more').optional(),
+  notes: z.string().max(1000, 'Notes are too long').optional(),
+});
+
+export const UpdateTaskTotalSftSchema = z.object({
+  taskId: z.string().uuid(),
+  totalSft: z.coerce.number().min(0, 'Total SFT must be 0 or more'),
+});
+
 export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
 export type UpdateStatusInput = z.infer<typeof UpdateTaskStatusSchema>;
 export type UpdateDepInput = z.infer<typeof UpdateDependencySchema>;
 export type CreateWorkInput = z.infer<typeof CreateWorkSchema>;
+export type CreateSftEntryInput = z.infer<typeof CreateSftEntrySchema>;
+export type UpdateTaskTotalSftInput = z.infer<typeof UpdateTaskTotalSftSchema>;

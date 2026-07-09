@@ -21,6 +21,7 @@ async function getProject(id: string) {
                 taskName: true,
                 status: true,
                 createdAt: true,
+                totalSft: true,
                 dependencyItems: {
                   select: {
                     id: true,
@@ -44,6 +45,7 @@ type Task = {
   taskName: string;
   status: string;
   createdAt: Date;
+  totalSft: unknown;
   dependencyItems: { id: string; completion: { status: string } | null }[];
 };
 
@@ -151,12 +153,22 @@ export default async function ProjectDashboardPage({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = await params;
-  const project = await getProject(projectId);
+  const [project, sftAgg] = await Promise.all([
+    getProject(projectId),
+    prisma.sftProgressEntry.aggregate({
+      where: { task: { work: { projectId } } },
+      _sum: { sftCompleted: true },
+    }),
+  ]);
   if (!project) notFound();
 
   const allTasks: (Task & { workCode: string; workColor: string; workName: string })[] = project.works.flatMap((w) =>
     w.tasks.map((t) => ({ ...t, workCode: w.code, workColor: w.color, workName: w.name }))
   );
+
+  const totalSftTarget = allTasks.reduce((s, t) => s + (t.totalSft != null ? Number(t.totalSft) : 0), 0);
+  const totalSftCompleted = sftAgg._sum.sftCompleted != null ? Number(sftAgg._sum.sftCompleted) : 0;
+  const sftPct = totalSftTarget > 0 ? Math.min(100, Math.round((totalSftCompleted / totalSftTarget) * 100)) : 0;
 
   const allItems   = allTasks.flatMap((t) => t.dependencyItems);
   const doneDeps   = allItems.filter((i) => isItemDone(i.completion?.status as never)).length;
@@ -314,6 +326,20 @@ export default async function ProjectDashboardPage({
           <div className="flex flex-col items-center pt-4 border-t border-gray-100">
             <ArcGauge pct={completePct} />
           </div>
+
+          {/* SFT progress */}
+          {totalSftTarget > 0 && (
+            <div className="pt-4 mt-4 border-t border-gray-100">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] text-gray-400">SFT Progress</span>
+                <span className="text-[11px] font-mono font-semibold tabular-nums text-gray-800">{sftPct}%</span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1.5">
+                <div className="h-full bg-gray-900 rounded-full transition-all" style={{ width: `${sftPct}%` }} />
+              </div>
+              <p className="text-[10.5px] text-gray-400">{totalSftCompleted} / {totalSftTarget} sq. ft.</p>
+            </div>
+          )}
         </div>
       </div>
 

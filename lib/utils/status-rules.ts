@@ -35,3 +35,18 @@ export function isLocked(status: TaskStatus): boolean {
 export function canEdit(status: TaskStatus): boolean {
   return status !== 'completed';
 }
+
+export interface PrerequisiteTask {
+  id: string;
+  taskId: string;
+  taskName: string;
+  status: TaskStatus;
+  workCode?: string;
+}
+
+// Pure filter over already-fetched prerequisite tasks — this file has no I/O
+// today and stays that way; the Prisma fetch happens in the caller (see
+// updateTaskStatus in app/actions/hvac-tasks.ts).
+export function getBlockingPrerequisites(prerequisites: PrerequisiteTask[]): PrerequisiteTask[] {
+  return prerequisites.filter((p) => p.status !== 'completed');
+}

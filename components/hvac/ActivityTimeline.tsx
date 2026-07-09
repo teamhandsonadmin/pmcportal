@@ -8,10 +8,16 @@ interface ActivityTimelineProps {
 
 function EventIcon({ type }: { type: ActivityEvent['actionType'] }) {
   const icons = {
-    task_created:    '◎',
-    status_change:   '⇄',
-    checklist_update: '✓',
-    comment:         '◷',
+    task_created:              '◎',
+    status_change:             '⇄',
+    checklist_update:          '✓',
+    comment:                   '◷',
+    sft_progress_logged:       '▦',
+    sft_progress_deleted:      '⊘',
+    sft_target_updated:        '◫',
+    inventory_item_created:    '▤',
+    inventory_transaction_recorded: '⇅',
+    inventory_ocr_intake:      '⌗',
   };
   return <span className="text-sm">{icons[type]}</span>;
 }
@@ -45,6 +51,46 @@ function EventDescription({ event }: { event: ActivityEvent }) {
       return (
         <span>
           Comment: <span className="italic text-muted-foreground">&ldquo;{p?.text as string}&rdquo;</span>
+        </span>
+      );
+
+    case 'sft_progress_logged':
+      return (
+        <span>
+          Logged <span className="font-semibold">{String(p?.sftCompleted ?? '')} SFT</span>
+          {p?.headcount != null && <> · {String(p.headcount)} workers</>}
+        </span>
+      );
+
+    case 'sft_progress_deleted':
+      return <span>Removed an SFT progress entry</span>;
+
+    case 'sft_target_updated':
+      return (
+        <span>
+          Total SFT target set to <span className="font-semibold">{String(p?.totalSft ?? '')}</span>
+        </span>
+      );
+
+    case 'inventory_item_created':
+      return (
+        <span>
+          Inventory item created: <span className="font-semibold">{p?.name as string}</span>
+        </span>
+      );
+
+    case 'inventory_transaction_recorded':
+      return (
+        <span>
+          Inventory transaction: <span className="font-mono">{p?.type as string}</span>{' '}
+          {String(p?.quantity ?? '')}
+        </span>
+      );
+
+    case 'inventory_ocr_intake':
+      return (
+        <span>
+          OCR invoice intake: {String(p?.itemCount ?? 0)} item(s) recorded
         </span>
       );
 

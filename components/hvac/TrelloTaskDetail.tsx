@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { updateDependencyCompletion } from '@/app/actions/dependencies';
 import { TaskStatusControl } from '@/components/hvac/TaskStatusControl';
 import { BlockedDependencyModal } from '@/components/hvac/BlockedDependencyModal';
+import { TaskDependencyCard } from '@/components/hvac/TaskDependencyCard';
+import type { TaskDependencyContext } from '@/app/actions/task-dependencies';
 import type { DependencyCategory, DependencyItem, CompletionStatus, TaskStatus } from '@/lib/types/hvac';
 import { isItemDone } from '@/lib/types/hvac';
 
@@ -190,8 +192,9 @@ function initials(name: string) {
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 }
 
-export function TrelloTaskDetail({ task, items, categories, locked }: {
+export function TrelloTaskDetail({ task, items, categories, locked, dependencyContext }: {
   task: TaskData; items: DependencyItem[]; categories: DependencyCategory[]; locked: boolean;
+  dependencyContext: TaskDependencyContext;
 }) {
   const allItems   = items.length;
   const doneItems  = items.filter((i) => isItemDone(i.completion?.status)).length;
@@ -311,6 +314,19 @@ export function TrelloTaskDetail({ task, items, categories, locked }: {
                   <BlockedDependencyModal items={items} categories={categories} />
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Prerequisite tasks (cross-trade) */}
+          {(dependencyContext.prerequisites.length > 0 || !locked) && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Prerequisite Tasks</h3>
+              <TaskDependencyCard
+                taskId={task.id}
+                prerequisites={dependencyContext.prerequisites}
+                candidateTasks={dependencyContext.candidateTasks}
+                locked={locked}
+              />
             </div>
           )}
 

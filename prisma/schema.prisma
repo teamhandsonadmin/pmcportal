@@ -42,6 +42,28 @@ enum CompletionStatus {
   not_required
 }
 
+// NOTE: the two enums below use UPPER_CASE members, diverging from the
+// lowercase_snake_case convention used by every other enum in this file.
+// Kept as originally specified by the client, not a mistake to "fix" silently.
+enum InventoryUnit {
+  PCS
+  KG
+  TON
+  BAG
+  LITRE
+  SQFT
+  CUBIC_M
+  BOX
+  ROLL
+  OTHER
+}
+
+enum InventoryTransactionType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
 model UserProfile {
   id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email     String     @unique
@@ -67,6 +89,7 @@ model Project {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   works     Work[]
+  inventoryItems InventoryItem[]
 
   @@map("projects")
 }
@@ -98,14 +121,38 @@ model HvacTask {
   plannedStartDate DateTime? @map("planned_start_date") @db.Date
   dueDate     DateTime?  @map("due_date") @db.Date
   workId      String?    @map("work_id") @db.Uuid
+  totalSft    Decimal?   @map("total_sft") @db.Decimal(10, 2)
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  work            Work?            @relation(fields: [workId], references: [id])
-  dependencyItems DependencyItem[]
-  activityLogs    ActivityLog[]
+  work               Work?               @relation(fields: [workId], references: [id])
+  dependencyItems    DependencyItem[]
+  activityLogs       ActivityLog[]
+  sftProgressEntries SftProgressEntry[]
+  blockedByDeps      TaskDependency[]    @relation("TaskBlockedBy")
+  blocksDeps         TaskDependency[]    @relation("TaskBlocks")
 
   @@map("hvac_tasks")
+}
+
+// Cross-trade task-to-task dependency, independent of the checklist system
+// above. taskId = the task that is waiting; dependsOnTaskId = the prerequisite
+// that must reach `completed` first. Enforced at the application layer (see
+// updateTaskStatus), not by a DB trigger — kept decoupled from the existing
+// checklist-status trigger in supabase/schema.sql.
+model TaskDependency {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId          String   @map("task_id") @db.Uuid
+  dependsOnTaskId String   @map("depends_on_task_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  task          HvacTask @relation("TaskBlockedBy", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask HvacTask @relation("TaskBlocks", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@map("task_dependencies")
+  @@unique([taskId, dependsOnTaskId])
+  @@index([taskId])
+  @@index([dependsOnTaskId])
 }
 
 model DependencyItem {
@@ -168,4 +215,63 @@ model Holiday {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("holidays")
+}
+
+// Incremental ledger of SFT (square footage) progress logged against a task.
+// Cumulative completed SFT for a task = SUM(sftCompleted) over its entries —
+// each row is an addition, never a replace-in-place value.
+model SftProgressEntry {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId       String    @map("task_id") @db.Uuid
+  entryDate    DateTime  @map("entry_date") @db.Date
+  sftCompleted Decimal   @map("sft_completed") @db.Decimal(10, 2)
+  headcount    Int?
+  notes        String?   @db.Text
+  recordedBy   String?   @map("recorded_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  task HvacTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, entryDate])
+  @@map("sft_progress_entries")
+}
+
+model InventoryItem {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String
+  sku            String?       @unique
+  category       String?
+  unit           InventoryUnit @default(PCS)
+  quantityOnHand Decimal       @default(0) @map("quantity_on_hand") @db.Decimal(12, 2)
+  reorderLevel   Decimal?      @map("reorder_level") @db.Decimal(12, 2)
+  unitCost       Decimal?      @map("unit_cost") @db.Decimal(12, 2)
+  supplier       String?
+  projectId      String?       @map("project_id") @db.Uuid
+  notes          String?       @db.Text
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  project      Project?               @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  transactions InventoryTransaction[]
+
+  @@map("inventory_items")
+}
+
+// sourceDocPath stores a Supabase Storage object path (not a browsable URL) —
+// the bucket is private, so a fresh signed URL is generated at render time
+// wherever this needs to be shown, rather than persisting a URL that expires.
+model InventoryTransaction {
+  id           String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId       String                   @map("item_id") @db.Uuid
+  type         InventoryTransactionType
+  quantity     Decimal                  @db.Decimal(12, 2)
+  sourceDocPath String?                 @map("source_doc_path")
+  note         String?                  @db.Text
+  recordedBy   String?                  @map("recorded_by") @db.Uuid
+  createdAt    DateTime                 @default(now()) @map("created_at")
+
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("inventory_transactions")
 }

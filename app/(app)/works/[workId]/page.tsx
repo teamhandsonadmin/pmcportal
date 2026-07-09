@@ -16,7 +16,7 @@ interface Props {
 }
 
 async function getWorkData(workId: string) {
-  const [work, tasks, activity, depItems, users] = await Promise.allSettled([
+  const [work, tasks, activity, depItems, users, sftAgg, externalDeps] = await Promise.allSettled([
     prisma.work.findUnique({ where: { id: workId } }),
     prisma.hvacTask.findMany({ where: { workId }, orderBy: { createdAt: 'asc' } }),
     prisma.activityLog.findMany({
@@ -29,23 +29,55 @@ async function getWorkData(workId: string) {
       include: { completion: true },
     }),
     prisma.userProfile.findMany({ select: { id: true, fullName: true } }),
+    prisma.sftProgressEntry.aggregate({
+      where: { task: { workId } },
+      _sum: { sftCompleted: true },
+    }),
+    // Cross-trade prerequisites reaching outside this Work — for the small
+    // "waiting on X" badge; the full graph lives on /works.
+    prisma.taskDependency.findMany({
+      where: { task: { workId }, dependsOnTask: { workId: { not: workId } } },
+      select: {
+        taskId: true,
+        dependsOnTask: { select: { taskId: true, taskName: true, work: { select: { code: true } } } },
+      },
+    }),
   ]);
-  return { work, tasks, activity, depItems, users };
+  return { work, tasks, activity, depItems, users, sftAgg, externalDeps };
 }
 
 export default async function WorkTaskListPage({ params }: Props) {
   const { workId } = await params;
-  const { work: workRes, tasks: tasksRes, activity: activityRes, depItems: depItemsRes, users: usersRes } = await getWorkData(workId);
+  const { work: workRes, tasks: tasksRes, activity: activityRes, depItems: depItemsRes, users: usersRes, sftAgg: sftAggRes, externalDeps: externalDepsRes } = await getWorkData(workId);
 
   const work = workRes.status === 'fulfilled' ? workRes.value : null;
   if (!work) notFound();
 
-  const tasks: HvacTask[] = tasksRes.status === 'fulfilled' ? tasksRes.value : [];
+  const tasks: HvacTask[] = (tasksRes.status === 'fulfilled' ? tasksRes.value : []).map((t) => ({
+    ...t,
+    totalSft: t.totalSft != null ? Number(t.totalSft) : null,
+  }));
+  const totalSftTarget = tasks.reduce((s, t) => s + (t.totalSft ?? 0), 0);
+  const totalSftCompleted = sftAggRes.status === 'fulfilled' && sftAggRes.value._sum.sftCompleted != null
+    ? Number(sftAggRes.value._sum.sftCompleted)
+    : 0;
+  const sftPct = totalSftTarget > 0 ? Math.min(100, Math.round((totalSftCompleted / totalSftTarget) * 100)) : 0;
   const activity: ActivityEvent[] = (activityRes.status === 'fulfilled' ? activityRes.value : [])
     .filter((e) => e.taskId !== null)
     .map((e) => ({ ...e, taskId: e.taskId!, payload: e.payload as Record<string, unknown> | null, actionType: e.actionType as ActivityEvent['actionType'] }));
   const depItems = depItemsRes.status === 'fulfilled' ? depItemsRes.value : [];
   const userMap = new Map((usersRes.status === 'fulfilled' ? usersRes.value : []).map((u) => [u.id, u.fullName]));
+
+  const externalPrereqsByTask = new Map<string, { taskId: string; taskName: string; workCode: string }[]>();
+  for (const dep of externalDepsRes.status === 'fulfilled' ? externalDepsRes.value : []) {
+    const list = externalPrereqsByTask.get(dep.taskId) ?? [];
+    list.push({
+      taskId: dep.dependsOnTask.taskId,
+      taskName: dep.dependsOnTask.taskName,
+      workCode: dep.dependsOnTask.work?.code ?? '—',
+    });
+    externalPrereqsByTask.set(dep.taskId, list);
+  }
 
   const stats: DashboardStats = {
     readyCount:      tasks.filter((t) => t.status === 'ready').length,
@@ -72,7 +104,11 @@ export default async function WorkTaskListPage({ params }: Props) {
     const totalItems = progress.reduce((s, p) => s + p.totalItems, 0);
     const doneItems  = progress.reduce((s, p) => s + p.completedItems, 0);
     const pct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
-    return { id: t.id, taskId: t.taskId, taskName: t.taskName, status: t.status, completionPct: pct, overdue: isOverdue(t.dueDate) };
+    return {
+      id: t.id, taskId: t.taskId, taskName: t.taskName, status: t.status, completionPct: pct,
+      overdue: isOverdue(t.dueDate),
+      externalPrereqs: externalPrereqsByTask.get(t.id),
+    };
   });
 
   return (
@@ -189,6 +225,26 @@ export default async function WorkTaskListPage({ params }: Props) {
               <RecentActivityFeed events={activity} />
             </div>
           </div>
+
+          {totalSftTarget > 0 && (
+            <div className="bg-card rounded-xl border border-border card-shadow overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-border">
+                <h2 className="text-[13px] font-semibold">SFT Progress</h2>
+              </div>
+              <div className="p-5">
+                <div className="flex items-end justify-between mb-2">
+                  <div>
+                    <span className="text-xl font-bold tabular-nums">{totalSftCompleted}</span>
+                    <span className="text-[12px] text-muted-foreground"> / {totalSftTarget} sq. ft.</span>
+                  </div>
+                  <span className="text-[12.5px] font-semibold tabular-nums">{sftPct}%</span>
+                </div>
+                <div className="h-1 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-gray-800 rounded-full transition-all" style={{ width: `${sftPct}%` }} />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="bg-card rounded-xl border border-border card-shadow overflow-hidden">
             <div className="px-5 py-3.5 border-b border-border">
