@@ -19,6 +19,7 @@ export interface TaskRow {
   status: TaskStatus;
   plannedStartDate: Date | null;
   dueDate: Date | null;
+  actualStartDate: Date | null;
   progressPct: number;
   overdue: boolean;
   assigneeName: string | null;
@@ -78,6 +79,32 @@ export function TasksExplorer({
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
+  // <ReactFlow fitView> (in TaskDependencyGraph) only ever fits on that
+  // component's OWN initial mount — it does not re-trigger just because the
+  // `nodes` prop later gets swapped for an entirely different set. Switching
+  // the project filter does exactly that (a completely different project's
+  // tasks, laid out at completely different dagre/manual positions), so
+  // without this, the canvas keeps whatever pan/zoom was left over from the
+  // PREVIOUSLY selected project — a real project full of real tasks can look
+  // completely blank if its nodes happen to sit outside that stale viewport.
+  //
+  // fitView() computes its bounding box from each node's MEASURED DOM size
+  // (via ResizeObserver), not from its data-model position alone — for a
+  // small project one requestAnimationFrame is enough for that measurement
+  // to land first, but "All Projects" combines every project's tasks onto
+  // one canvas (300+ nodes) and measuring all of them can genuinely take
+  // longer than a single frame. A fitView called before every node is
+  // measured computes its box from whichever partial set happened to be
+  // measured so far, which reads as "everything jammed in one corner" —
+  // exactly this bug. The setTimeout follow-up re-fits once more shortly
+  // after, correcting for that large-graph case without doing anything
+  // visible for the common (small, already-settled) case.
+  useEffect(() => {
+    requestAnimationFrame(() => rfInstanceRef.current?.fitView());
+    const t = setTimeout(() => rfInstanceRef.current?.fitView(), 300);
+    return () => clearTimeout(t);
+  }, [projectF]);
+
   function toggleFullscreen() {
     // Must be the first synchronous statement in the handler — requestFullscreen()
     // requires transient user-activation, which is lost across any await/microtask.
@@ -136,6 +163,7 @@ export function TasksExplorer({
         assigneeName: r.assigneeName,
         plannedStartDate: r.plannedStartDate,
         dueDate: r.dueDate,
+        actualStartDate: r.actualStartDate,
         manualPositionX: r.manualPositionX,
         manualPositionY: r.manualPositionY,
         prerequisiteCount: r.prerequisiteCount,

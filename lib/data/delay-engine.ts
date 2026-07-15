@@ -51,7 +51,7 @@ export async function getTaskScheduleImpact(taskId: string): Promise<TaskSchedul
         plannedStartDate: true, dueDate: true, actualStartDate: true, actualEndDate: true,
       },
     }),
-    prisma.taskDependency.findMany({ select: { taskId: true, dependsOnTaskId: true } }),
+    prisma.taskDependency.findMany({ select: { taskId: true, dependsOnTaskId: true, type: true } }),
   ]);
 
   const byId = new Map(tasks.map((t) => [t.id, t]));
@@ -79,6 +79,7 @@ export async function getTaskScheduleImpact(taskId: string): Promise<TaskSchedul
   const engineDeps: DelayEngineDependency[] = deps.map((d) => ({
     taskId: d.taskId,
     dependsOnTaskId: d.dependsOnTaskId,
+    type: d.type,
   }));
 
   const delays = computeProjectDelays(engineTasks, engineDeps, blockedDates);

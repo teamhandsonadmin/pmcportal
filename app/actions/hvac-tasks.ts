@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { CreateTaskSchema, UpdateTaskPlannedDatesSchema, UpdateTaskStatusSchema, type CreateTaskInput } from '@/lib/validations/hvac';
-import { getBlockingPrerequisites } from '@/lib/utils/status-rules';
+import { getStartBlockingPrerequisites, getFinishBlockingPrerequisites, formatUnmetPrerequisites } from '@/lib/utils/status-rules';
 import { validateTaskDates } from '@/lib/utils/working-days';
 import type { ActionResult } from '@/lib/types/hvac';
 
@@ -185,24 +185,32 @@ export async function updateTaskStatus(
   if (!existing) return { success: false, error: 'Task not found' };
   if (existing.status === 'completed') return { success: false, error: 'Completed tasks are locked' };
 
-  if (parsed.data.status === 'in_progress') {
-    if (existing.status !== 'ready') {
+  if (parsed.data.status === 'in_progress' || parsed.data.status === 'completed') {
+    if (parsed.data.status === 'in_progress' && existing.status !== 'ready') {
       return { success: false, error: 'Task must be in Ready state before starting' };
     }
 
     // Cross-trade gate — independent of the checklist system above. A task
     // can be checklist-`ready` and still be waiting on another trade's task.
+    // Fetches every dependency type; which ones actually gate THIS
+    // transition is decided below by getStartBlockingPrerequisites (FS/SS,
+    // for entering in_progress) vs getFinishBlockingPrerequisites (FF/SF,
+    // for entering completed) — see their doc comments in status-rules.ts.
     const prereqRows = await prisma.taskDependency.findMany({
       where: { taskId },
       select: {
-        dependsOnTask: { select: { id: true, taskId: true, taskName: true, status: true } },
+        type: true,
+        dependsOnTask: { select: { id: true, taskId: true, taskName: true, status: true, actualStartDate: true } },
       },
     }).catch(() => []);
+    const typedPrereqs = prereqRows.map((r) => ({ type: r.type, task: r.dependsOnTask }));
 
-    const blockers = getBlockingPrerequisites(prereqRows.map((r) => r.dependsOnTask));
+    const blockers = parsed.data.status === 'in_progress'
+      ? getStartBlockingPrerequisites(typedPrereqs)
+      : getFinishBlockingPrerequisites(typedPrereqs);
     if (blockers.length > 0) {
-      const names = blockers.map((b) => `${b.taskId} (${b.taskName})`).join(', ');
-      return { success: false, error: `Blocked by: ${names} — not yet completed` };
+      const verb = parsed.data.status === 'in_progress' ? 'start' : 'complete';
+      return { success: false, error: `Cannot ${verb} — ${formatUnmetPrerequisites(blockers)}` };
     }
   }
 

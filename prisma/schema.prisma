@@ -29,6 +29,17 @@ enum TaskStatus {
   completed
 }
 
+// FS/SS/FF/SF, matching the four standard PM dependency types (Zoho, MS
+// Project, etc.). FS is the only type that has ever existed in this app —
+// every existing TaskDependency row keeps behaving exactly as it always has
+// via the field default below.
+enum DependencyType {
+  FS
+  SS
+  FF
+  SF
+}
+
 enum DependencyCategory {
   architect
   client
@@ -251,10 +262,11 @@ model TaskType {
 // updateTaskStatus), not by a DB trigger — kept decoupled from the existing
 // checklist-status trigger in supabase/schema.sql.
 model TaskDependency {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  taskId          String   @map("task_id") @db.Uuid
-  dependsOnTaskId String   @map("depends_on_task_id") @db.Uuid
-  createdAt       DateTime @default(now()) @map("created_at")
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId          String         @map("task_id") @db.Uuid
+  dependsOnTaskId String         @map("depends_on_task_id") @db.Uuid
+  type            DependencyType @default(FS)
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   task          HvacTask @relation("TaskBlockedBy", fields: [taskId], references: [id], onDelete: Cascade)
   dependsOnTask HvacTask @relation("TaskBlocks", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)

@@ -2,7 +2,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { AddTaskDependencySchema } from '@/lib/validations/task-dependencies';
+import { AddTaskDependencySchema, UpdateDependencyTypeSchema } from '@/lib/validations/task-dependencies';
 import { wouldCreateCycle } from '@/lib/utils/dependency-graph';
 import type { ActionResult, TaskStatus } from '@/lib/types/hvac';
 
@@ -35,7 +35,7 @@ export async function addTaskDependency(
     };
   }
 
-  const { taskId, dependsOnTaskId } = parsed.data;
+  const { taskId, dependsOnTaskId, type } = parsed.data;
 
   const existingEdges = await prisma.taskDependency.findMany({
     select: { taskId: true, dependsOnTaskId: true },
@@ -49,7 +49,7 @@ export async function addTaskDependency(
   }
 
   try {
-    await prisma.taskDependency.create({ data: { taskId, dependsOnTaskId } });
+    await prisma.taskDependency.create({ data: { taskId, dependsOnTaskId, type } });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '';
     if (msg.includes('Unique constraint') || msg.includes('unique')) {
@@ -62,11 +62,50 @@ export async function addTaskDependency(
     data: {
       taskId,
       actionType: 'task_dependency_added',
-      payload: { taskId, dependsOnTaskId },
+      payload: { taskId, dependsOnTaskId, type },
     },
   }).catch(() => {});
 
   await revalidateTaskFamily(taskId, dependsOnTaskId);
+  return { success: true };
+}
+
+// Changes an existing edge's type in place — no cycle-check needed (type
+// doesn't affect graph topology, only status-gating semantics), just needs
+// the row to exist. Deliberately separate from reconnectTaskDependency:
+// changing type and changing which two tasks are linked are independent
+// edits on the canvas (a type dropdown appears alongside the existing
+// delete/reconnect controls when an edge is selected).
+export async function updateDependencyType(dependencyId: string, type: string): Promise<ActionResult> {
+  const parsed = UpdateDependencyTypeSchema.safeParse({ dependencyId, type });
+  if (!parsed.success) {
+    return { success: false, error: 'Invalid dependency type' };
+  }
+
+  const existing = await prisma.taskDependency.findUnique({
+    where: { id: parsed.data.dependencyId },
+    select: { taskId: true, dependsOnTaskId: true, type: true },
+  }).catch(() => null);
+  if (!existing) return { success: false, error: 'Dependency not found' };
+
+  try {
+    await prisma.taskDependency.update({
+      where: { id: parsed.data.dependencyId },
+      data: { type: parsed.data.type },
+    });
+  } catch {
+    return { success: false, error: 'Failed to update dependency type' };
+  }
+
+  await prisma.activityLog.create({
+    data: {
+      taskId: existing.taskId,
+      actionType: 'task_dependency_type_changed',
+      payload: { dependencyId: parsed.data.dependencyId, oldType: existing.type, newType: parsed.data.type },
+    },
+  }).catch(() => {});
+
+  await revalidateTaskFamily(existing.taskId, existing.dependsOnTaskId);
   return { success: true };
 }
 

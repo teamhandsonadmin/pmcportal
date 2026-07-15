@@ -75,7 +75,7 @@ export async function getGanttDelayData(): Promise<GanttDelayData> {
         actualStartDate: true, actualEndDate: true, status: true,
       },
     }),
-    prisma.taskDependency.findMany({ select: { taskId: true, dependsOnTaskId: true } }),
+    prisma.taskDependency.findMany({ select: { taskId: true, dependsOnTaskId: true, type: true } }),
   ]);
 
   const years = new Set(
@@ -100,6 +100,7 @@ export async function getGanttDelayData(): Promise<GanttDelayData> {
   const engineDeps: DelayEngineDependency[] = deps.map((d) => ({
     taskId: d.taskId,
     dependsOnTaskId: d.dependsOnTaskId,
+    type: d.type,
   }));
 
   const delays = computeProjectDelays(engineTasks, engineDeps, blockedDates);

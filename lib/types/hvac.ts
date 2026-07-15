@@ -6,6 +6,11 @@ export type TaskStatus =
   | 'blocked'
   | 'completed';
 
+// Finish-to-Start / Start-to-Start / Finish-to-Finish / Start-to-Finish —
+// the four standard PM dependency types. FS is the only one that has ever
+// existed in this app; every existing TaskDependency row defaults to it.
+export type DependencyType = 'FS' | 'SS' | 'FF' | 'SF';
+
 export type DependencyCategory =
   | 'architect'
   | 'client'

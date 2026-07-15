@@ -1,4 +1,4 @@
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus, DependencyType } from '@/lib/types/hvac';
 
 export const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   draft:       [],
@@ -72,12 +72,65 @@ export interface PrerequisiteTask {
   taskId: string;
   taskName: string;
   status: TaskStatus;
+  actualStartDate: Date | null;
   workCode?: string;
 }
 
-// Pure filter over already-fetched prerequisite tasks — this file has no I/O
-// today and stays that way; the Prisma fetch happens in the caller (see
-// updateTaskStatus in app/actions/hvac-tasks.ts).
-export function getBlockingPrerequisites(prerequisites: PrerequisiteTask[]): PrerequisiteTask[] {
-  return prerequisites.filter((p) => p.status !== 'completed');
+export interface TypedPrerequisite {
+  type: DependencyType;
+  task: PrerequisiteTask;
+}
+
+export interface UnmetPrerequisite {
+  task: PrerequisiteTask;
+  type: DependencyType;
+  reason: string;
+}
+
+export const DEPENDENCY_TYPE_LABELS: Record<DependencyType, string> = {
+  FS: 'Finish-to-Start',
+  SS: 'Start-to-Start',
+  FF: 'Finish-to-Finish',
+  SF: 'Start-to-Finish',
+};
+
+// Which condition to check for each type, and per the model's own meaning:
+// FS/FF care about the prerequisite reaching `completed`; SS/SF care about
+// it having genuinely STARTED (actualStartDate set — the real ground-truth
+// signal, not just "status isn't draft/ready"). Exported so any other
+// consumer that needs "is this specific typed dependency satisfied" (e.g.
+// the flowchart's prerequisite-count badge in lib/data/works.ts) uses the
+// exact same definition as the actual gating logic below, rather than a
+// second, potentially-drifting copy of this rule.
+export function isDependencySatisfied(type: DependencyType, task: PrerequisiteTask): boolean {
+  return type === 'FS' || type === 'FF' ? task.status === 'completed' : !!task.actualStartDate;
+}
+function unmetReason(type: DependencyType): string {
+  return type === 'FS' || type === 'FF' ? 'has not completed yet' : 'has not started yet';
+}
+
+// Gates entering `in_progress` — only FS/SS-type links constrain STARTING.
+// An FF/SF-type prerequisite never blocks this task from starting (see
+// DependencyType's own doc comment in prisma/schema.prisma) — it only ever
+// constrains this task's own finish, checked separately below.
+export function getStartBlockingPrerequisites(prereqs: TypedPrerequisite[]): UnmetPrerequisite[] {
+  return prereqs
+    .filter((p) => p.type === 'FS' || p.type === 'SS')
+    .filter((p) => !isDependencySatisfied(p.type, p.task))
+    .map((p) => ({ task: p.task, type: p.type, reason: unmetReason(p.type) }));
+}
+
+// Gates entering `completed` — only FF/SF-type links constrain FINISHING.
+// FS/SS links already gated this task's start and are not re-checked here —
+// once a task is allowed to start, an FS/SS prerequisite has nothing further
+// to say about when it's allowed to finish.
+export function getFinishBlockingPrerequisites(prereqs: TypedPrerequisite[]): UnmetPrerequisite[] {
+  return prereqs
+    .filter((p) => p.type === 'FF' || p.type === 'SF')
+    .filter((p) => !isDependencySatisfied(p.type, p.task))
+    .map((p) => ({ task: p.task, type: p.type, reason: unmetReason(p.type) }));
+}
+
+export function formatUnmetPrerequisites(unmet: UnmetPrerequisite[]): string {
+  return unmet.map((u) => `'${u.task.taskName}' (${DEPENDENCY_TYPE_LABELS[u.type]}) ${u.reason}`).join('; ');
 }

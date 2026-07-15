@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import type { ActivityEvent, DashboardStats } from '@/lib/types/hvac';
 import { isItemDone } from '@/lib/types/hvac';
 import { isOverdue } from '@/lib/utils/format';
+import { isDependencySatisfied, type PrerequisiteTask } from '@/lib/utils/status-rules';
 import type { TaskRow } from '@/components/tasks/TasksExplorer';
 import type { GraphEdgeInput } from '@/components/tasks/TaskDependencyGraph';
 
@@ -33,7 +34,7 @@ export async function getWorksData() {
     // server-side "current project" concept on this page today (see
     // CHANGELOG_TASK_DEPENDENCIES.md); the existing client-side project
     // filter in TasksExplorer narrows what the graph shows.
-    prisma.taskDependency.findMany({ select: { id: true, taskId: true, dependsOnTaskId: true } }),
+    prisma.taskDependency.findMany({ select: { id: true, taskId: true, dependsOnTaskId: true, type: true } }),
     // Symmetric, non-blocking — deliberately NOT read anywhere near
     // prereqsByTask/stats below. Only ever used for the canvas's dashed
     // parallel-link rendering.
@@ -76,11 +77,26 @@ export async function getWorksData() {
   // convergence badge — built from the same `tasks`/`deps` already fetched
   // above, not a second query (deps.dependsOnTaskId is the prerequisite;
   // deps.taskId is the task waiting on it).
-  const statusById = new Map(tasks.map((t) => [t.id, t.status]));
-  const prereqsByTask = new Map<string, string[]>();
+  //
+  // Only FS/SS-type edges are counted here, and deliberately not FF/SF —
+  // this badge exists to communicate "is this task blocked from STARTING by
+  // its prerequisites", which is exactly what FS/SS edges gate (see
+  // getStartBlockingPrerequisites in status-rules.ts); an FF/SF edge never
+  // blocks starting at all, so counting it here would misrepresent why a
+  // task is (or isn't) still waiting. "Done" per prerequisite is also
+  // type-aware via the same isDependencySatisfied() the real gating logic
+  // uses — FS wants the prerequisite `completed`, SS only wants it started
+  // (actualStartDate set), so an SS prerequisite that's merely in_progress
+  // correctly still counts as "done" for THIS badge's purposes even though
+  // it isn't finished, since it's no longer blocking this task's start.
+  const prereqTaskById = new Map<string, PrerequisiteTask>(
+    tasks.map((t) => [t.id, { id: t.id, taskId: t.taskId, taskName: t.taskName, status: t.status, actualStartDate: t.actualStartDate }])
+  );
+  const startGatingDepsByTask = new Map<string, { prereqId: string; type: typeof deps[number]['type'] }[]>();
   for (const d of deps) {
-    if (!prereqsByTask.has(d.taskId)) prereqsByTask.set(d.taskId, []);
-    prereqsByTask.get(d.taskId)!.push(d.dependsOnTaskId);
+    if (d.type !== 'FS' && d.type !== 'SS') continue;
+    if (!startGatingDepsByTask.has(d.taskId)) startGatingDepsByTask.set(d.taskId, []);
+    startGatingDepsByTask.get(d.taskId)!.push({ prereqId: d.dependsOnTaskId, type: d.type });
   }
 
   const stats: DashboardStats = {
@@ -104,6 +120,7 @@ export async function getWorksData() {
       status: t.status,
       plannedStartDate: t.plannedStartDate,
       dueDate: t.dueDate,
+      actualStartDate: t.actualStartDate,
       progressPct,
       overdue: isOverdue(t.dueDate) && t.status !== 'completed',
       assigneeName: t.assignedTo ? userMap.get(t.assignedTo) ?? null : null,
@@ -113,12 +130,16 @@ export async function getWorksData() {
       workColor: t.work?.color ?? '#9CA3AF',
       manualPositionX: t.manualPositionX,
       manualPositionY: t.manualPositionY,
-      prerequisiteCount: prereqsByTask.get(t.id)?.length ?? 0,
-      prerequisiteCompletedCount: (prereqsByTask.get(t.id) ?? []).filter((id) => statusById.get(id) === 'completed').length,
+      prerequisiteCount: startGatingDepsByTask.get(t.id)?.length ?? 0,
+      prerequisiteCompletedCount: (startGatingDepsByTask.get(t.id) ?? [])
+        .filter(({ prereqId, type }) => {
+          const prereqTask = prereqTaskById.get(prereqId);
+          return !!prereqTask && isDependencySatisfied(type, prereqTask);
+        }).length,
     };
   });
 
-  const edges: GraphEdgeInput[] = deps.map((d) => ({ id: d.id, source: d.dependsOnTaskId, target: d.taskId }));
+  const edges: GraphEdgeInput[] = deps.map((d) => ({ id: d.id, source: d.dependsOnTaskId, target: d.taskId, type: d.type }));
   const parallelEdges: GraphEdgeInput[] = parallelLinks.map((p) => ({ id: p.id, source: p.taskAId, target: p.taskBId }));
 
   return { tasks, works, stats, rows, edges, parallelEdges, workBreakdown, recentActivity };

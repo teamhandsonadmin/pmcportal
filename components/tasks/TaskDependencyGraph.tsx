@@ -28,9 +28,9 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from '@dagrejs/dagre';
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus, DependencyType } from '@/lib/types/hvac';
 import type { ActionResult } from '@/lib/types/hvac';
-import { STATUS_COLOR_PALETTE, STATUS_COLOR_GROUP, allowedTransitions, TRANSITION_LABELS } from '@/lib/utils/status-rules';
+import { STATUS_COLOR_PALETTE, STATUS_COLOR_GROUP, allowedTransitions, TRANSITION_LABELS, DEPENDENCY_TYPE_LABELS, isDependencySatisfied } from '@/lib/utils/status-rules';
 import type { WorkOption } from '@/components/tasks/TasksExplorer';
 import type { TaskTypeOption } from '@/components/hvac/TaskTypeManager';
 import {
@@ -44,7 +44,7 @@ import {
   resetManualPositions,
   type TaskDeleteImpact,
 } from '@/app/actions/hvac-tasks';
-import { addTaskDependency, removeTaskDependency, reconnectTaskDependency } from '@/app/actions/task-dependencies';
+import { addTaskDependency, removeTaskDependency, reconnectTaskDependency, updateDependencyType } from '@/app/actions/task-dependencies';
 import { createParallelLink, removeParallelLink, reconnectParallelLink } from '@/app/actions/task-parallel-links';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
@@ -86,6 +86,7 @@ export interface GraphTask {
   assigneeName: string | null;
   plannedStartDate: Date | null;
   dueDate: Date | null;
+  actualStartDate: Date | null;
   manualPositionX: number | null;
   manualPositionY: number | null;
   prerequisiteCount: number;
@@ -96,7 +97,13 @@ export interface GraphEdgeInput {
   id: string;
   source: string;
   target: string;
+  // Series-edge-only (TaskDependency.type) — absent/ignored for parallel
+  // edges, which have no FS/SS/FF/SF concept. Defaults to 'FS' wherever
+  // missing so pre-existing callers that don't pass it keep working.
+  type?: DependencyType;
 }
+
+const DEPENDENCY_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
 
 type ActiveTool = 'select' | 'add' | 'connect' | 'parallel';
 
@@ -160,6 +167,7 @@ interface GraphActions {
   onRenameRequest: (nodeId: string) => void;
   onOpenTask: (nodeId: string) => void;
   onEdgeDeleteRequest: (edgeId: string) => void;
+  onDependencyTypeChange: (edgeId: string, type: DependencyType) => void;
   locked: boolean;
   pendingConnectSource: string | null;
   pendingParallelSource: string | null;
@@ -171,6 +179,7 @@ const GraphActionsContext = createContext<GraphActions>({
   onRenameRequest: () => {},
   onOpenTask: () => {},
   onEdgeDeleteRequest: () => {},
+  onDependencyTypeChange: () => {},
   locked: false,
   pendingConnectSource: null,
   pendingParallelSource: null,
@@ -402,22 +411,52 @@ function FloatingEdge({ id, source, target, style, markerEnd, selected, data }: 
   const labelX = (sourceIntersection.x + targetIntersection.x) / 2;
   const labelY = (sourceIntersection.y + targetIntersection.y) / 2;
 
+  const isParallel = data?.linkType === 'parallel';
+  const dependencyType = (data?.dependencyType as DependencyType | undefined) ?? 'FS';
+
   return (
     <>
       <BaseEdge id={id} path={path} style={effectiveStyle} markerEnd={markerEnd} />
-      {selected && !actions.locked && (
-        <EdgeLabelRenderer>
+      <EdgeLabelRenderer>
+        {/* Type badge — series edges only, always visible (not just on
+            select/hover) so every FS/SS/FF/SF link is identifiable at a
+            glance without opening a details panel. Text-only distinction
+            (not a new color) per the canvas already using color for status/
+            parallel-vs-series — doubles as the edit control when selected:
+            a real <select> either way, just styled to read as a flat badge
+            when not selected and as an obvious dropdown when it is. */}
+        {!isParallel && (
+          <select
+            value={dependencyType}
+            disabled={!selected || actions.locked}
+            onChange={(e) => { e.stopPropagation(); actions.onDependencyTypeChange(id, e.target.value as DependencyType); }}
+            onClick={(e) => e.stopPropagation()}
+            className={
+              'nodrag nopan absolute text-center text-[9.5px] font-bold rounded px-1 py-0.5 shadow-sm outline-none ' +
+              (selected && !actions.locked
+                ? 'bg-white border border-gray-300 text-gray-700 cursor-pointer'
+                : 'bg-white/90 border border-gray-200 text-gray-500 appearance-none cursor-default')
+            }
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'all' }}
+            title={`${DEPENDENCY_TYPE_LABELS[dependencyType]}${selected ? ' — change type' : ''}`}
+          >
+            {DEPENDENCY_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        )}
+        {selected && !actions.locked && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); actions.onEdgeDeleteRequest(id); }}
             className="nodrag nopan absolute w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-500 hover:text-red-600 hover:border-red-300 flex items-center justify-center text-xs shadow-sm"
-            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'all' }}
-            title={data?.linkType === 'parallel' ? 'Remove parallel link' : 'Remove dependency'}
+            style={{ transform: `translate(-50%, -50%) translate(${labelX + (isParallel ? 0 : 20)}px, ${labelY - 16}px)`, pointerEvents: 'all' }}
+            title={isParallel ? 'Remove parallel link' : 'Remove dependency'}
           >
             ×
           </button>
-        </EdgeLabelRenderer>
-      )}
+        )}
+      </EdgeLabelRenderer>
     </>
   );
 }
@@ -547,6 +586,12 @@ export function TaskDependencyGraph({
   const [groupByTrade, setGroupByTrade] = useState(false);
   const [locked, setLocked] = useState(false);
   const [pendingConnectSource, setPendingConnectSource] = useState<string | null>(null);
+  // Persistent selector attached to the Connect tool itself, rather than a
+  // popup shown after both nodes are picked — whatever it's set to when the
+  // SECOND node is clicked is the type of edge created. Defaults to FS, so
+  // an admin who never touches it gets the exact same two-click, FS-only
+  // flow that existed before this feature.
+  const [pendingConnectType, setPendingConnectType] = useState<DependencyType>('FS');
   const [pendingParallelSource, setPendingParallelSource] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
@@ -628,7 +673,7 @@ export function TaskDependencyGraph({
         source: e.source,
         target: e.target,
         type: 'floating',
-        data: { linkType: 'series' },
+        data: { linkType: 'series', dependencyType: e.type ?? 'FS' },
         markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR },
         style: { stroke: EDGE_COLOR, strokeWidth: 1.5, strokeDasharray: '5 4' },
       }));
@@ -806,6 +851,23 @@ export function TaskDependencyGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Optimistic — flips the badge/select immediately, reverts on a failed
+  // server call (e.g. the row got deleted from under it). No cycle-check or
+  // reconnect-style validation needed: changing a type doesn't touch graph
+  // topology, only which status-gating rule applies to this edge.
+  const requestDependencyTypeChange = useCallback((edgeId: string, type: DependencyType) => {
+    const previous = flowEdgesRef.current;
+    setFlowEdges((eds) => eds.map((e) => (e.id === edgeId ? { ...e, data: { ...e.data, dependencyType: type } } : e)));
+    if (edgeId.startsWith('temp-')) return;
+    updateDependencyType(edgeId, type).then((res) => {
+      if (!res.success) {
+        flashError(formatActionError(res.error, 'Failed to update dependency type'));
+        setFlowEdges(previous);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const graphActionsValue = useMemo(
     (): GraphActions => ({
       onDuplicate: handleDuplicate,
@@ -813,12 +875,13 @@ export function TaskDependencyGraph({
       onRenameRequest: openEditForm,
       onOpenTask: handleOpenTask,
       onEdgeDeleteRequest: requestEdgeDelete,
+      onDependencyTypeChange: requestDependencyTypeChange,
       locked,
       pendingConnectSource,
       pendingParallelSource,
       hoveredNodeId,
     }),
-    [handleDuplicate, handleQuickStatusChange, openEditForm, handleOpenTask, requestEdgeDelete, locked, pendingConnectSource, pendingParallelSource, hoveredNodeId]
+    [handleDuplicate, handleQuickStatusChange, openEditForm, handleOpenTask, requestEdgeDelete, requestDependencyTypeChange, locked, pendingConnectSource, pendingParallelSource, hoveredNodeId]
   );
 
   const nodesForFlow = useMemo(
@@ -842,7 +905,7 @@ export function TaskDependencyGraph({
         setPendingConnectSource(null); // clicked the same node again — cancel
         return;
       }
-      void completeConnection(pendingConnectSource, node.id);
+      void completeConnection(pendingConnectSource, node.id, pendingConnectType);
       return;
     }
     if (activeTool === 'parallel' && !locked) {
@@ -938,13 +1001,14 @@ export function TaskDependencyGraph({
   // persist a manual position for the moved nodes — they stay eligible for
   // auto-layout going forward, which is the point (a one-time visual
   // settle, not a snapshot).
-  async function completeConnection(sourceId: string, targetId: string) {
+  async function completeConnection(sourceId: string, targetId: string, type: DependencyType) {
     setPendingConnectSource(null);
     setActiveTool('select');
 
     const fd = new FormData();
     fd.set('taskId', targetId);
     fd.set('dependsOnTaskId', sourceId);
+    fd.set('type', type);
     const res = await addTaskDependency(ADD_TASK_ACTION_INITIAL, fd);
     if (!res.success) {
       flashError(formatActionError(res.error, 'Could not create this dependency'));
@@ -959,6 +1023,7 @@ export function TaskDependencyGraph({
         source: sourceId,
         target: targetId,
         type: 'floating',
+        data: { linkType: 'series', dependencyType: type },
         markerEnd: { type: MarkerType.ArrowClosed, color: MANUAL_EDGE_COLOR },
         style: { stroke: MANUAL_EDGE_COLOR, strokeWidth: 1.5 },
       },
@@ -1025,15 +1090,29 @@ export function TaskDependencyGraph({
   // every other local mutation in this file that touches a series edge
   // needs to patch this itself to stay live, the same way handleQuickStatusChange
   // already patches `status` locally after its own server call succeeds.
+  // Only FS/SS-type edges count here, matching lib/data/works.ts's server-
+  // side computation exactly (see that file's comment) — this badge means
+  // "is this task blocked from STARTING by its prerequisites", which is
+  // exactly what FS/SS edges gate; FF/SF edges never block starting at all.
+  // "Done" per prerequisite reuses isDependencySatisfied — the SAME check
+  // updateTaskStatus's real gating logic uses — so this optimistic local
+  // patch can never visually disagree with what actually gates the task.
   function updatePrereqBadges(taskNodeIds: string[], edgesSnapshot: Edge[]) {
     if (taskNodeIds.length === 0) return;
     setNodes((nds) => {
-      const statusById = new Map(nds.map((n) => [n.id, (n.data as unknown as NodeData).status]));
+      const taskById = new Map(nds.map((n) => [n.id, n.data as unknown as NodeData]));
       return nds.map((n) => {
         if (!taskNodeIds.includes(n.id)) return n;
-        const incoming = edgesSnapshot.filter((e) => e.target === n.id && e.data?.linkType !== 'parallel');
-        const prerequisiteCount = incoming.length;
-        const prerequisiteCompletedCount = incoming.filter((e) => statusById.get(e.source) === 'completed').length;
+        const startGating = edgesSnapshot.filter((e) => {
+          const depType = (e.data?.dependencyType as DependencyType | undefined) ?? 'FS';
+          return e.target === n.id && e.data?.linkType !== 'parallel' && (depType === 'FS' || depType === 'SS');
+        });
+        const prerequisiteCount = startGating.length;
+        const prerequisiteCompletedCount = startGating.filter((e) => {
+          const depType = (e.data?.dependencyType as DependencyType | undefined) ?? 'FS';
+          const prereqTask = taskById.get(e.source);
+          return !!prereqTask && isDependencySatisfied(depType, prereqTask);
+        }).length;
         return { ...n, data: { ...n.data, prerequisiteCount, prerequisiteCompletedCount } };
       });
     });
@@ -1335,8 +1414,22 @@ export function TaskDependencyGraph({
       )}
 
       {activeTool === 'connect' && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[11.5px] font-medium shadow-md">
-          {pendingConnectSource ? 'Click the target task…' : 'Click the source task…'}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[11.5px] font-medium shadow-md">
+          <span>{pendingConnectSource ? 'Click the target task…' : 'Click the source task…'}</span>
+          <div className="h-4 w-px bg-white/30" />
+          <label className="flex items-center gap-1.5 text-[11px] font-normal text-white/90">
+            Type
+            <select
+              value={pendingConnectType}
+              onChange={(e) => setPendingConnectType(e.target.value as DependencyType)}
+              className="bg-blue-700 border border-white/30 rounded px-1.5 py-0.5 text-white text-[11px] font-semibold outline-none cursor-pointer"
+              title="The dependency type the next created link will use"
+            >
+              {DEPENDENCY_TYPES.map((t) => (
+                <option key={t} value={t}>{t} — {DEPENDENCY_TYPE_LABELS[t]}</option>
+              ))}
+            </select>
+          </label>
         </div>
       )}
 
@@ -1448,6 +1541,16 @@ export function TaskDependencyGraph({
       <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
         <button
           type="button"
+          onClick={() => instanceRef.current?.fitView({ padding: 0.2, duration: 300 })}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11.5px] font-medium shadow-sm transition-colors"
+          style={{ borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
+          title="Re-center the view on every currently-visible task"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+          Center
+        </button>
+        <button
+          type="button"
           disabled={locked}
           onClick={() => setResetConfirmOpen(true)}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11.5px] font-medium shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1490,6 +1593,9 @@ export function TaskDependencyGraph({
             <div className="flex items-center gap-1.5">
               <svg width="20" height="8" viewBox="0 0 20 8"><line x1="0" y1="4" x2="20" y2="4" stroke={PARALLEL_EDGE_COLOR} strokeWidth="2" strokeDasharray="5 3" /></svg>
               Parallel — non-blocking
+            </div>
+            <div className="pt-0.5 mt-0.5 border-t border-gray-100 text-[9.5px] text-gray-400 leading-snug max-w-[175px]">
+              Each series link&apos;s badge is its type — FS Finish-to-Start, SS Start-to-Start, FF Finish-to-Finish, SF Start-to-Finish. Select a link to change it.
             </div>
           </div>
           <GraphActionsContext.Provider value={graphActionsValue}>
