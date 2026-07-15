@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -33,6 +33,8 @@ interface WorkingDayPickerProps {
   minDate?: Date;
   /** Notifies the parent when the selection changes — e.g. so a due-date picker's minDate can track a planned-start-date picker's current value. */
   onDateChange?: (date: Date | undefined) => void;
+  /** Forwarded to PopoverContent — needed when this picker is opened from inside a real-fullscreen container (see popover.tsx's own comment). */
+  container?: ComponentProps<typeof PopoverContent>['container'];
 }
 
 // One shared date picker for plannedStartDate/dueDate everywhere they're set,
@@ -40,7 +42,7 @@ interface WorkingDayPickerProps {
 // creation form and an edit form built later. A plain <input type="date">
 // can't disable arbitrary individual dates (only a min/max range), which is
 // why this exists instead.
-export function WorkingDayPicker({ name, id, defaultValue, value, placeholder, minDate, onDateChange }: WorkingDayPickerProps) {
+export function WorkingDayPicker({ name, id, defaultValue, value, placeholder, minDate, onDateChange, container }: WorkingDayPickerProps) {
   const [selected, setSelected] = useState<Date | undefined>(
     defaultValue ? parseDateKey(defaultValue) : undefined
   );
@@ -101,7 +103,7 @@ export function WorkingDayPicker({ name, id, defaultValue, value, placeholder, m
             </Button>
           }
         />
-        <PopoverContent className="w-auto p-0">
+        <PopoverContent className="w-auto p-0" container={container}>
           <Calendar
             mode="single"
             selected={selected}

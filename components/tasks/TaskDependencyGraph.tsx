@@ -129,6 +129,23 @@ function formatCardDateRange(start: Date | null, due: Date | null): string {
   return 'No planned dates';
 }
 
+// Several actions (createTaskFromCanvas, updateTaskPlannedDates, ...) can
+// fail with EITHER a plain string OR a Zod-style field-errors object (e.g.
+// { due_date: ['Due date must be on or after the planned start date'] }) —
+// every call site used to only handle the string case and silently fell
+// back to a generic "Failed to ..." message otherwise, hiding the actual,
+// actionable reason from the admin.
+function formatActionError(error: unknown, fallback: string): string {
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const messages = Object.values(error as Record<string, unknown>)
+      .flat()
+      .filter((m): m is string => typeof m === 'string');
+    if (messages.length > 0) return messages.join(' ');
+  }
+  return fallback;
+}
+
 // Per-node actions/flags that would otherwise need to live on each node's
 // `data` — but `data` is only recreated when a node's own task fields
 // change, whereas these (duplicate/status/rename, lock state, which node is
@@ -559,7 +576,7 @@ export function TaskDependencyGraph({
     setDeleteConfirm({ nodeId, taskName: task.taskName, humanTaskId: task.taskId, impact: null, loading: true, error: null });
     getTaskDeleteImpact(nodeId).then((res) => {
       setDeleteConfirm((prev) => (prev && prev.nodeId === nodeId
-        ? { ...prev, loading: false, impact: res.success ? res.data! : null, error: res.success ? null : (typeof res.error === 'string' ? res.error : 'Failed to load task info') }
+        ? { ...prev, loading: false, impact: res.success ? res.data! : null, error: res.success ? null : (formatActionError(res.error, 'Failed to load task info')) }
         : prev));
     });
   }, [tasks]);
@@ -675,7 +692,7 @@ export function TaskDependencyGraph({
       manualPositionY: (task.manualPositionY ?? 0) + 40,
     }).then((res) => {
       if (!res.success) {
-        flashError(typeof res.error === 'string' ? res.error : 'Failed to duplicate task');
+        flashError(formatActionError(res.error, 'Failed to duplicate task'));
         return;
       }
       if (!res.data) {
@@ -717,7 +734,7 @@ export function TaskDependencyGraph({
   const handleQuickStatusChange = useCallback((nodeId: string, status: TaskStatus) => {
     updateTaskStatus(nodeId, status).then((res) => {
       if (!res.success) {
-        flashError(typeof res.error === 'string' ? res.error : 'Failed to update status');
+        flashError(formatActionError(res.error, 'Failed to update status'));
         return;
       }
       setNodes((nds) => nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, status } } : n)));
@@ -909,7 +926,7 @@ export function TaskDependencyGraph({
     if (node.type !== 'task') return;
     updateTaskManualPosition(node.id, node.position.x, node.position.y).then((res) => {
       if (res.success) flashSaved();
-      else flashError(typeof res.error === 'string' ? res.error : 'Failed to save position');
+      else flashError(formatActionError(res.error, 'Failed to save position'));
     });
   }
 
@@ -930,7 +947,7 @@ export function TaskDependencyGraph({
     fd.set('dependsOnTaskId', sourceId);
     const res = await addTaskDependency(ADD_TASK_ACTION_INITIAL, fd);
     if (!res.success) {
-      flashError(typeof res.error === 'string' ? res.error : 'Could not create this dependency');
+      flashError(formatActionError(res.error, 'Could not create this dependency'));
       return;
     }
 
@@ -980,7 +997,7 @@ export function TaskDependencyGraph({
 
     const res = await createParallelLink(taskAId, taskBId);
     if (!res.success) {
-      flashError(typeof res.error === 'string' ? res.error : 'Could not create this parallel link');
+      flashError(formatActionError(res.error, 'Could not create this parallel link'));
       return;
     }
 
@@ -1035,11 +1052,11 @@ export function TaskDependencyGraph({
     if (edgeId.startsWith('temp-')) return;
     if (linkType === 'parallel') {
       removeParallelLink(edgeId).then((res) => {
-        if (!res.success) flashError(typeof res.error === 'string' ? res.error : 'Failed to remove parallel link');
+        if (!res.success) flashError(formatActionError(res.error, 'Failed to remove parallel link'));
       });
     } else {
       removeTaskDependency(edgeId).then((res) => {
-        if (!res.success) flashError(typeof res.error === 'string' ? res.error : 'Failed to remove dependency');
+        if (!res.success) flashError(formatActionError(res.error, 'Failed to remove dependency'));
       });
     }
   }
@@ -1083,7 +1100,7 @@ export function TaskDependencyGraph({
     if (linkType === 'parallel') {
       const res = await reconnectParallelLink(oldEdge.id, newConnection.source, newConnection.target);
       if (!res.success) {
-        flashError(typeof res.error === 'string' ? res.error : 'Could not reconnect this link');
+        flashError(formatActionError(res.error, 'Could not reconnect this link'));
         return;
       }
       const nextEdges = reconnectEdge(oldEdge, newConnection, flowEdgesRef.current, { shouldReplaceId: false });
@@ -1096,7 +1113,7 @@ export function TaskDependencyGraph({
     // the dependent task — same mapping completeConnection already uses.
     const res = await reconnectTaskDependency(oldEdge.id, newConnection.target, newConnection.source);
     if (!res.success) {
-      flashError(typeof res.error === 'string' ? res.error : 'Could not reconnect this dependency');
+      flashError(formatActionError(res.error, 'Could not reconnect this dependency'));
       return;
     }
     const nextEdges = reconnectEdge(oldEdge, newConnection, flowEdgesRef.current, { shouldReplaceId: false });
@@ -1163,7 +1180,7 @@ export function TaskDependencyGraph({
       manualPositionY: createForm.position.y,
     });
     if (!res.success) {
-      setCreateError(typeof res.error === 'string' ? res.error : 'Failed to create task');
+      setCreateError(formatActionError(res.error, 'Failed to create task'));
       return;
     }
     if (!res.data) { setCreateError('Failed to create task'); return; }
@@ -1221,14 +1238,14 @@ export function TaskDependencyGraph({
 
     if (nameChanged) {
       const res = await updateTaskName(editForm.nodeId, trimmed);
-      if (!res.success) { setEditError(typeof res.error === 'string' ? res.error : 'Failed to update task name'); return; }
+      if (!res.success) { setEditError(formatActionError(res.error, 'Failed to update task name')); return; }
     }
     if (datesChanged) {
       const res = await updateTaskPlannedDates(editForm.nodeId, {
         plannedStartDate: editForm.plannedStartDate || null,
         dueDate: editForm.dueDate || null,
       });
-      if (!res.success) { setEditError(typeof res.error === 'string' ? res.error : 'Failed to update dates'); return; }
+      if (!res.success) { setEditError(formatActionError(res.error, 'Failed to update dates')); return; }
     }
 
     setNodes((nds) => nds.map((n) => (n.id === editForm.nodeId
@@ -1250,7 +1267,7 @@ export function TaskDependencyGraph({
     if (!deleteConfirm) return;
     const res = await deleteHvacTask(deleteConfirm.nodeId);
     if (!res.success) {
-      setDeleteConfirm((prev) => (prev ? { ...prev, error: typeof res.error === 'string' ? res.error : 'Failed to delete task' } : prev));
+      setDeleteConfirm((prev) => (prev ? { ...prev, error: formatActionError(res.error, 'Failed to delete task') } : prev));
       return;
     }
     setNodes((nds) => nds.filter((n) => n.id !== deleteConfirm.nodeId));
@@ -1264,7 +1281,7 @@ export function TaskDependencyGraph({
     const res = await resetManualPositions(tasks.map((t) => t.id));
     setResetting(false);
     if (!res.success) {
-      flashError(typeof res.error === 'string' ? res.error : 'Failed to reset layout');
+      flashError(formatActionError(res.error, 'Failed to reset layout'));
       return;
     }
 
@@ -1569,6 +1586,7 @@ export function TaskDependencyGraph({
                   name="canvas_planned_start"
                   defaultValue={createForm?.plannedStartDate || undefined}
                   onDateChange={(d) => setCreateForm((f) => (f ? { ...f, plannedStartDate: d ? formatDateKey(d) : '' } : f))}
+                  container={fullscreenContainer}
                 />
               </div>
               <div className="space-y-1.5">
@@ -1577,6 +1595,7 @@ export function TaskDependencyGraph({
                   name="canvas_due_date"
                   defaultValue={createForm?.dueDate || undefined}
                   onDateChange={(d) => setCreateForm((f) => (f ? { ...f, dueDate: d ? formatDateKey(d) : '' } : f))}
+                  container={fullscreenContainer}
                 />
               </div>
             </div>
@@ -1613,6 +1632,7 @@ export function TaskDependencyGraph({
                   name="canvas_edit_planned_start"
                   defaultValue={editForm?.plannedStartDate || undefined}
                   onDateChange={(d) => setEditForm((f) => (f ? { ...f, plannedStartDate: d ? formatDateKey(d) : '' } : f))}
+                  container={fullscreenContainer}
                 />
               </div>
               <div className="space-y-1.5">
@@ -1621,6 +1641,7 @@ export function TaskDependencyGraph({
                   name="canvas_edit_due_date"
                   defaultValue={editForm?.dueDate || undefined}
                   onDateChange={(d) => setEditForm((f) => (f ? { ...f, dueDate: d ? formatDateKey(d) : '' } : f))}
+                  container={fullscreenContainer}
                 />
               </div>
             </div>

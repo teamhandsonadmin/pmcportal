@@ -82,7 +82,14 @@ export function GanttTaskBars({ row, delay, grounded, scale, onOpenDetail }: Gan
       {normalSegment && (
         <div
           className="absolute rounded-sm group-hover:brightness-95 transition-[filter]"
-          style={{ top: PROJECTED_BAR_TOP, height: BAR_HEIGHT, left: normalSegment.left, width: Math.max(normalSegment.width, 2), backgroundColor: statusColor }}
+          // Same light treatment as the planned bar above (opacity 0.55) —
+          // this bar is a WORKFLOW status color (e.g. red for "blocked",
+          // meaning "waiting on its dependency checklist"), not a schedule
+          // health signal. At full saturation it reads as "behind plan" /
+          // an alarm even for an on-schedule, not-yet-started task, which is
+          // exactly what the real delay stripe below is for — this bar
+          // should never compete with that at the same visual intensity.
+          style={{ top: PROJECTED_BAR_TOP, height: BAR_HEIGHT, left: normalSegment.left, width: Math.max(normalSegment.width, 2), backgroundColor: statusColor, opacity: 0.55 }}
         />
       )}
       {delaySegment && (
