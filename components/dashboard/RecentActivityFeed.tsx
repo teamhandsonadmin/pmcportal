@@ -1,17 +1,24 @@
 import Link from 'next/link';
 import { formatRelativeTime } from '@/lib/utils/format';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
-import type { ActivityEvent, TaskStatus } from '@/lib/types/hvac';
+import { STATUS_CHIP } from '@/components/hvac/StatusDropdown';
+import type { ActivityEvent, CompletionStatus, TaskStatus } from '@/lib/types/hvac';
 
 interface RecentActivityFeedProps {
   events: ActivityEvent[];
 }
 
 const actionSymbols: Record<string, string> = {
-  task_created:     '+',
-  status_change:    '↗',
-  checklist_update: '✓',
-  comment:          '·',
+  task_created:          '+',
+  status_change:         '↗',
+  checklist_update:      '✓',
+  comment:               '·',
+  planned_dates_updated: '📅',
+};
+
+const DATE_FIELD_LABEL: Record<string, string> = {
+  planned_start_date: 'planned start',
+  due_date: 'due date',
 };
 
 function eventSummary(event: ActivityEvent): string {
@@ -20,12 +27,15 @@ function eventSummary(event: ActivityEvent): string {
     case 'task_created':     return `Task ${p?.taskId ?? ''} created`;
     case 'status_change':    return `${STATUS_LABELS[(p?.from as TaskStatus) ?? 'draft']} → ${STATUS_LABELS[(p?.to as TaskStatus) ?? 'draft']}`;
     case 'checklist_update': {
-      const status = p?.status as string | undefined;
-      return status === 'delivered' ? 'Item marked delivered'
-        : status === 'not_required' ? 'Item marked not required'
-        : 'Item marked pending';
+      const status = p?.status as CompletionStatus | undefined;
+      return status && STATUS_CHIP[status] ? `Item marked ${STATUS_CHIP[status].label}` : 'Item marked Pending';
     }
     case 'comment':          return `Comment added`;
+    case 'planned_dates_updated': {
+      const fields = (p?.fields as string[] | undefined) ?? [];
+      const labels = fields.map((f) => DATE_FIELD_LABEL[f] ?? f);
+      return labels.length > 0 ? `Updated ${labels.join(', ')}` : 'Planned dates updated';
+    }
     default:                 return 'Activity';
   }
 }

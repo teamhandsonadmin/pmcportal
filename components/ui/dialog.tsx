@@ -26,7 +26,11 @@ function DialogBackdrop({ className, ...props }: DialogPrimitive.Backdrop.Props)
     <DialogPrimitive.Backdrop
       data-slot="dialog-backdrop"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 transition-opacity data-starting-style:opacity-0 data-ending-style:opacity-0",
+        // Leaflet's own controls/panes go up to z-index: 1000 (see
+        // leaflet.css) — any Leaflet map still mounted behind this dialog
+        // (e.g. SiteLocationPreviewMap) would otherwise render on top of it
+        // regardless of DOM order, so this must stay above that.
+        "fixed inset-0 z-[1100] bg-black/50 transition-opacity data-starting-style:opacity-0 data-ending-style:opacity-0",
         className
       )}
       {...props}
@@ -38,15 +42,16 @@ function DialogContent({
   className,
   children,
   showClose = true,
+  container,
   ...props
-}: DialogPrimitive.Popup.Props & { showClose?: boolean }) {
+}: DialogPrimitive.Popup.Props & { showClose?: boolean; container?: DialogPrimitive.Portal.Props['container'] }) {
   return (
-    <DialogPortal>
+    <DialogPortal container={container}>
       <DialogBackdrop />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-6 shadow-lg outline-none",
+          "fixed top-1/2 left-1/2 z-[1100] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-6 shadow-lg outline-none",
           "transition-all data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0",
           className
         )}

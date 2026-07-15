@@ -33,7 +33,9 @@ export async function POST(request: NextRequest) {
     role = signInData.user?.user_metadata?.role ?? 'admin';
   }
 
-  const dest = role === 'site_engineer' ? '/site-engineer/works' : '/projects';
+  const dest = role === 'site_engineer' ? '/site-engineer'
+    : role === 'client' ? '/client/sequence'
+    : '/projects';
 
   const res = NextResponse.redirect(new URL(dest, request.url), { status: 303 });
   res.cookies.set('user_role', role, {

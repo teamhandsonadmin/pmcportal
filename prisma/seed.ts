@@ -67,8 +67,7 @@ async function seedProjectAndWorks() {
     });
     console.log(`Created project: ${project.name}`);
   } else {
-    console.log('Demo project already exists, skipping project/work/task seeding.');
-    return { project, works: null };
+    console.log('Demo project already exists — reusing it (works/tasks below have their own idempotency checks, so this no longer skips them).');
   }
 
   const workSpecs = [
@@ -138,7 +137,7 @@ async function seedTask(projectName: string, workId: string, workCode: string, s
     await prisma.dependencyCompletion.create({
       data: {
         itemId: item.id,
-        status: 'delivered',
+        status: 'YES',
         completedAt: daysAgo(deliveredIdx % FORECAST_HISTORY_DAYS),
       },
     });

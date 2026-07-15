@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import {
   addDependencyItem,
   deleteDependencyItem,
@@ -9,80 +9,7 @@ import {
 } from '@/app/actions/dependencies';
 import type { DependencyCategory, DependencyItem, CompletionStatus } from '@/lib/types/hvac';
 import { CATEGORY_COLORS, isItemDone } from '@/lib/types/hvac';
-
-/* ── Status dropdown — three color-coded chip options, replacing the old
-   checkbox + separate N/A button. Selecting an option saves immediately. */
-const STATUS_CHIP: Record<CompletionStatus, { label: string; bg: string; text: string; dot: string }> = {
-  pending:      { label: 'Not Started',    bg: '#F3F4F6', text: '#4B5563', dot: '#9CA3AF' },
-  delivered:    { label: 'Completed',      bg: '#DCFCE7', text: '#15803D', dot: '#22C55E' },
-  not_required: { label: 'Not Applicable', bg: '#EDE9FE', text: '#6D28D9', dot: '#8B5CF6' },
-};
-const STATUS_ORDER: CompletionStatus[] = ['pending', 'delivered', 'not_required'];
-
-function StatusDropdown({
-  status,
-  disabled,
-  onChange,
-}: {
-  status: CompletionStatus;
-  disabled: boolean;
-  onChange: (status: CompletionStatus) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const cfg = STATUS_CHIP[status];
-
-  useEffect(() => {
-    if (!open) return;
-    function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onOutside);
-    return () => document.removeEventListener('mousedown', onOutside);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative flex-shrink-0">
-      <button
-        onClick={() => !disabled && setOpen((v) => !v)}
-        disabled={disabled}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-opacity disabled:opacity-60"
-        style={{ backgroundColor: cfg.bg, color: cfg.text }}
-      >
-        <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ backgroundColor: cfg.dot }} />
-        {cfg.label}
-      </button>
-
-      {open && (
-        <div className="absolute z-10 top-full left-0 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-          {STATUS_ORDER.map((s) => {
-            const opt = STATUS_CHIP[s];
-            return (
-              <button
-                key={s}
-                onClick={() => { onChange(s); setOpen(false); }}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 hover:bg-gray-50 transition-colors"
-              >
-                <span
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                  style={{ backgroundColor: opt.bg, color: opt.text }}
-                >
-                  <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ backgroundColor: opt.dot }} />
-                  {opt.label}
-                </span>
-                {s === status && (
-                  <svg className="ml-auto" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+import { NOTE_PROMPT_STATUSES, StatusDropdown } from './StatusDropdown';
 
 /* ── Category config — colored per category so each checklist is easy to
    tell apart at a glance, reusing the same palette as the template editor. */
@@ -110,14 +37,13 @@ function catConfig(category: DependencyCategory) {
 /* ── Trello checkbox item ─────────────────────────────────── */
 function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskId: string; locked: boolean }) {
   const [isPending, startTransition] = useTransition();
-  const [localStatus, setLocalStatus] = useState<CompletionStatus>(item.completion?.status ?? 'pending');
+  const [localStatus, setLocalStatus] = useState<CompletionStatus>(item.completion?.status ?? 'PENDING');
   const [showComment, setShowComment] = useState(false);
   const [comment, setComment] = useState(item.completion?.comment ?? '');
   const [isEditing, setIsEditing] = useState(false);
   const [labelText, setLabelText] = useState(item.itemLabel);
 
-  const isDone = localStatus === 'delivered';
-  const isNA   = localStatus === 'not_required';
+  const cleared = isItemDone(localStatus);
 
   function saveLabel() {
     const trimmed = labelText.trim();
@@ -140,6 +66,10 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
   function changeStatus(next: CompletionStatus) {
     if (locked || isPending) return;
     setLocalStatus(next);
+    // Blocking statuses are exactly where a reason matters later (e.g.
+    // explaining a delay in a client meeting) — nudge for a note here
+    // rather than requiring one, which would slow down routine use.
+    if (NOTE_PROMPT_STATUSES.includes(next)) setShowComment(true);
     startTransition(async () => { await updateDependencyCompletion(item.id, taskId, next, comment || null); });
   }
 
@@ -167,7 +97,7 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
             className="w-full text-[13px] text-gray-800 outline-none border-b border-gray-300 bg-transparent pb-0.5"
           />
         ) : (
-          <span className={`text-[13px] leading-snug ${isDone || isNA ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+          <span className={`text-[13px] leading-snug ${cleared ? 'line-through text-gray-400' : 'text-gray-800'}`}>
             {item.itemLabel}
           </span>
         )}
@@ -179,7 +109,7 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Add a note…"
+              placeholder={NOTE_PROMPT_STATUSES.includes(localStatus) ? 'Add a note on why (optional but recommended)…' : 'Add a note…'}
               rows={2}
               className="w-full text-[12px] border border-gray-200 rounded-md px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-gray-300"
             />

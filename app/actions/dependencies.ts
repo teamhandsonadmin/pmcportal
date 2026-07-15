@@ -91,12 +91,12 @@ export async function updateDependencyCompletion(
         itemId,
         status: parsed.data.status as never,
         comment: parsed.data.comment ?? null,
-        completedAt: parsed.data.status === 'delivered' ? new Date() : null,
+        completedAt: parsed.data.status === 'YES' ? new Date() : null,
       },
       update: {
         status: parsed.data.status as never,
         comment: parsed.data.comment ?? null,
-        completedAt: parsed.data.status === 'delivered' ? new Date() : null,
+        completedAt: parsed.data.status === 'YES' ? new Date() : null,
       },
     });
   } catch {

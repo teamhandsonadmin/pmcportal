@@ -48,15 +48,21 @@ export function SiteLocationCard({
   projectId,
   initialLat,
   initialLng,
+  initialRadiusMeters,
 }: {
   projectId: string;
   initialLat: number | null;
   initialLng: number | null;
+  initialRadiusMeters: number | null;
 }) {
   const hasLocation = initialLat != null && initialLng != null;
   const [open, setOpen] = useState(false);
   const [lat, setLat] = useState(initialLat ?? DEFAULT_LAT);
   const [lng, setLng] = useState(initialLng ?? DEFAULT_LNG);
+  // Kept as a raw string (not a number) so the field can sit empty — null
+  // radius must stay null, not silently become 0 or some default.
+  const [radiusInput, setRadiusInput] = useState(initialRadiusMeters != null ? String(initialRadiusMeters) : '');
+  const parsedRadius = radiusInput.trim() === '' ? null : Number(radiusInput);
 
   const [state, formAction, isPending] = useActionState(updateProjectLocation, initialState);
   const [lastHandledState, setLastHandledState] = useState(state);
@@ -66,10 +72,12 @@ export function SiteLocationCard({
   }
 
   const globalError = !state.success && typeof state.error === 'string' ? state.error : null;
+  const radiusError = !state.success && typeof state.error === 'object' ? state.error.siteRadiusMeters?.[0] : null;
 
   function openDialog() {
     setLat(initialLat ?? DEFAULT_LAT);
     setLng(initialLng ?? DEFAULT_LNG);
+    setRadiusInput(initialRadiusMeters != null ? String(initialRadiusMeters) : '');
     setOpen(true);
   }
 
@@ -95,6 +103,9 @@ export function SiteLocationCard({
               <SiteLocationPreviewMap lat={initialLat} lng={initialLng} />
               <p className="text-[11px] font-mono text-gray-400 tabular-nums">
                 {initialLat.toFixed(6)}, {initialLng.toFixed(6)}
+              </p>
+              <p className="text-[11px] text-gray-400">
+                {initialRadiusMeters != null ? `${initialRadiusMeters}m geofence radius` : 'No geofence radius set'}
               </p>
             </div>
           ) : (
@@ -126,7 +137,12 @@ export function SiteLocationCard({
             </p>
 
             {open && (
-              <SiteLocationMap lat={lat} lng={lng} onChange={(nLat, nLng) => { setLat(nLat); setLng(nLng); }} />
+              <SiteLocationMap
+                lat={lat}
+                lng={lng}
+                radiusMeters={parsedRadius}
+                onChange={(nLat, nLng) => { setLat(nLat); setLng(nLng); }}
+              />
             )}
 
             <div className="grid grid-cols-2 gap-3">
@@ -158,6 +174,26 @@ export function SiteLocationCard({
                   required
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="siteRadiusMeters">Geofence Radius (meters)</Label>
+              <Input
+                id="siteRadiusMeters"
+                name="siteRadiusMeters"
+                type="number"
+                step="1"
+                min={5}
+                max={5000}
+                value={radiusInput}
+                onChange={(e) => setRadiusInput(e.target.value)}
+                placeholder="e.g. 100"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                How close (in meters) a mobile check-in/out must be to count as &quot;at the site&quot;. Leave
+                blank to not enforce a radius for this project yet.
+              </p>
+              {radiusError && <p className="text-[12px] text-red-600">{radiusError}</p>}
             </div>
 
             <DialogFooter>

@@ -33,10 +33,10 @@ async function getDashboardData() {
       select: { completion: { select: { status: true } } },
     }),
     prisma.dependencyCompletion.count({
-      where: { status: 'delivered', completedAt: { gte: startOfToday } },
+      where: { status: 'YES', completedAt: { gte: startOfToday } },
     }),
     prisma.dependencyCompletion.count({
-      where: { status: 'delivered', completedAt: { gte: windowStart } },
+      where: { status: 'YES', completedAt: { gte: windowStart } },
     }),
     prisma.activityLog.findMany({
       where: { taskId: { not: null } },

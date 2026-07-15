@@ -1,24 +1,40 @@
 import { z } from 'zod';
 
+// Shared by every optional date field across these schemas — a native/hidden
+// date input always submits '' (not an absent key) when left blank, so the
+// literal('') escape hatch is required, not just .optional().nullable().
+const optionalDateField = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD format')
+  .optional()
+  .nullable()
+  .or(z.literal(''));
+
 export const CreateTaskSchema = z.object({
   task_name: z
     .string()
     .min(3, 'Task name must be at least 3 characters')
     .max(200, 'Task name is too long'),
   description: z.string().max(2000, 'Description is too long').optional(),
-  planned_start_date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD format')
-    .optional()
-    .nullable(),
-  due_date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD format')
-    .optional()
-    .nullable(),
+  planned_start_date: optionalDateField,
+  due_date: optionalDateField,
+  task_type_id: z.string().uuid('Invalid task type').optional().nullable().or(z.literal('')),
   assigned_to: z.string().uuid('Invalid user').optional().nullable().or(z.literal('')),
   work_id: z.string().uuid('Invalid work ID'),
   total_sft: z.coerce.number().min(0, 'Total SFT must be 0 or more').optional(),
+});
+
+// Planned dates only — actual dates (actualStartDate/actualEndDate) are
+// deferred until the capture mechanism is decided; see the note on
+// validateTaskDates() in lib/utils/working-days.ts.
+export const UpdateTaskPlannedDatesSchema = z.object({
+  planned_start_date: optionalDateField,
+  due_date: optionalDateField,
+});
+
+export const TaskTypeSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100, 'Name is too long'),
+  default_duration_days: z.coerce.number().int().min(1, 'Must be at least 1 working day').max(365, 'That seems too long'),
 });
 
 export const UpdateTaskStatusSchema = z.object({
@@ -26,7 +42,7 @@ export const UpdateTaskStatusSchema = z.object({
 });
 
 export const UpdateDependencySchema = z.object({
-  status: z.enum(['pending', 'delivered', 'not_required']),
+  status: z.enum(['YES', 'NO', 'ON_HOLD', 'PENDING', 'REVISIONS', 'PROCEED']),
   comment: z.string().max(500, 'Comment is too long').optional().nullable(),
 });
 
@@ -45,6 +61,7 @@ export const AddCommentSchema = z.object({
 export const AddHolidaySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD format'),
   name: z.string().min(1).max(200),
+  type: z.enum(['national_holiday', 'festival_holiday', 'regional_holiday', 'company_shutdown']),
   description: z.string().max(500).optional().nullable(),
 });
 

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { isItemDone } from '@/lib/types/hvac';
-import { SiteLocationCard } from '@/components/projects/SiteLocationCard';
+import { getProjectSftProgress } from '@/lib/data/sft';
 
 export const dynamic = 'force-dynamic';
 
@@ -154,22 +154,15 @@ export default async function ProjectDashboardPage({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = await params;
-  const [project, sftAgg] = await Promise.all([
+  const [project, sftProgress] = await Promise.all([
     getProject(projectId),
-    prisma.sftProgressEntry.aggregate({
-      where: { task: { work: { projectId } } },
-      _sum: { sftCompleted: true },
-    }),
+    getProjectSftProgress(projectId),
   ]);
   if (!project) notFound();
 
   const allTasks: (Task & { workCode: string; workColor: string; workName: string })[] = project.works.flatMap((w) =>
     w.tasks.map((t) => ({ ...t, workCode: w.code, workColor: w.color, workName: w.name }))
   );
-
-  const totalSftTarget = allTasks.reduce((s, t) => s + (t.totalSft != null ? Number(t.totalSft) : 0), 0);
-  const totalSftCompleted = sftAgg._sum.sftCompleted != null ? Number(sftAgg._sum.sftCompleted) : 0;
-  const sftPct = totalSftTarget > 0 ? Math.min(100, Math.round((totalSftCompleted / totalSftTarget) * 100)) : 0;
 
   const allItems   = allTasks.flatMap((t) => t.dependencyItems);
   const doneDeps   = allItems.filter((i) => isItemDone(i.completion?.status as never)).length;
@@ -204,13 +197,22 @@ export default async function ProjectDashboardPage({
           </nav>
           <h1 className="text-[20px] font-bold tracking-tight text-gray-900">Dashboard</h1>
         </div>
-        <Link
-          href={`/projects/${project.id}/works/new`}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-medium hover:bg-black transition-colors"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          Add Work
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/projects/${project.id}/settings`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 text-gray-700 text-[12px] font-medium hover:bg-gray-50 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Settings
+          </Link>
+          <Link
+            href={`/projects/${project.id}/works/new`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-medium hover:bg-black transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Add Work
+          </Link>
+        </div>
       </div>
 
       {/* ── 4 Stat cards ──────────────────────────────── */}
@@ -279,7 +281,7 @@ export default async function ProjectDashboardPage({
       </div>
 
       {/* ── Charts row ────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 gap-4">
 
         {/* Work Progress bar chart */}
         <div className="col-span-2 bg-white rounded-xl border border-gray-200 p-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -328,26 +330,30 @@ export default async function ProjectDashboardPage({
             <ArcGauge pct={completePct} />
           </div>
 
-          {/* SFT progress */}
-          {totalSftTarget > 0 && (
-            <div className="pt-4 mt-4 border-t border-gray-100">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] text-gray-400">SFT Progress</span>
-                <span className="text-[11px] font-mono font-semibold tabular-nums text-gray-800">{sftPct}%</span>
-              </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1.5">
-                <div className="h-full bg-gray-900 rounded-full transition-all" style={{ width: `${sftPct}%` }} />
-              </div>
-              <p className="text-[10.5px] text-gray-400">{totalSftCompleted} / {totalSftTarget} sq. ft.</p>
+          {/* SFT progress — against Project.totalSft, the project-wide target
+              (Project Settings), not the sum of individual tasks' own totalSft. */}
+          <div className="pt-4 mt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] text-gray-400">SFT Progress</span>
+              {sftProgress.percentage != null && (
+                <span className="text-[11px] font-mono font-semibold tabular-nums text-gray-800">{sftProgress.percentage}%</span>
+              )}
             </div>
-          )}
+            {sftProgress.target != null ? (
+              <>
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1.5">
+                  <div className="h-full bg-gray-900 rounded-full transition-all" style={{ width: `${sftProgress.percentage ?? 0}%` }} />
+                </div>
+                <p className="text-[10.5px] text-gray-400">{sftProgress.completed} / {sftProgress.target} sq. ft.</p>
+              </>
+            ) : (
+              <p className="text-[11px] text-gray-400">
+                No target set —{' '}
+                <Link href={`/projects/${project.id}/settings`} className="underline hover:text-gray-700">set one in Settings</Link>.
+              </p>
+            )}
+          </div>
         </div>
-
-        <SiteLocationCard
-          projectId={project.id}
-          initialLat={project.siteLatitude != null ? Number(project.siteLatitude) : null}
-          initialLng={project.siteLongitude != null ? Number(project.siteLongitude) : null}
-        />
       </div>
 
       {/* ── Task table ────────────────────────────────── */}

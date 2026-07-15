@@ -14,7 +14,7 @@ export type DependencyCategory =
   | 'inspector'
   | 'procurement';
 
-export type CompletionStatus = 'pending' | 'delivered' | 'not_required';
+export type CompletionStatus = 'YES' | 'NO' | 'ON_HOLD' | 'PENDING' | 'REVISIONS' | 'PROCEED';
 
 export type InventoryUnit =
   | 'PCS'
@@ -112,7 +112,8 @@ export interface ActivityEvent {
     | 'sft_target_updated'
     | 'inventory_item_created'
     | 'inventory_transaction_recorded'
-    | 'inventory_ocr_intake';
+    | 'inventory_ocr_intake'
+    | 'planned_dates_updated';
   payload: Record<string, unknown> | null;
   createdAt: Date;
 }
@@ -125,10 +126,13 @@ export interface DashboardStats {
   totalCount: number;
 }
 
+export type HolidayType = 'national_holiday' | 'festival_holiday' | 'regional_holiday' | 'company_shutdown';
+
 export interface Holiday {
   id: string;
   date: Date;
   name: string;
+  type: HolidayType;
   description: string | null;
   createdAt: Date;
 }
@@ -137,6 +141,8 @@ export type ActionResult<T = void> =
   | { success: true; data?: T }
   | { success: false; error: string | Record<string, string[]> };
 
+// "Clears" states — the item is done and doesn't block its task from
+// reaching "ready". Every other status (NO/ON_HOLD/PENDING/REVISIONS) blocks.
 export function isItemDone(status: CompletionStatus | undefined): boolean {
-  return status === 'delivered' || status === 'not_required';
+  return status === 'YES' || status === 'PROCEED';
 }

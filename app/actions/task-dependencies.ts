@@ -12,6 +12,12 @@ async function revalidateTaskFamily(taskId: string, dependsOnTaskId: string) {
   revalidatePath(`/hvac/${dependsOnTaskId}`);
   revalidatePath(`/hvac/${dependsOnTaskId}/overview`);
   revalidatePath('/works');
+  // The flowchart canvas is a newer consumer of this action (connecting two
+  // tasks by clicking) and wasn't in this list before — without it, the
+  // page's own server-rendered edge list wouldn't refresh (the canvas keeps
+  // working via its own local optimistic edge, but a hard reload or a second
+  // browser tab would show stale data until this was added).
+  revalidatePath('/works/flowchart');
 }
 
 export async function addTaskDependency(
@@ -35,7 +41,7 @@ export async function addTaskDependency(
     select: { taskId: true, dependsOnTaskId: true },
   });
 
-  if (wouldCreateCycle(existingEdges, taskId, dependsOnTaskId)) {
+  if (wouldCreateCycle(existingEdges.map((e) => ({ id: e.taskId, dependsOnId: e.dependsOnTaskId })), taskId, dependsOnTaskId)) {
     return {
       success: false,
       error: 'This would create a circular dependency — the prerequisite task already (directly or indirectly) depends on this task.',
@@ -61,6 +67,71 @@ export async function addTaskDependency(
   }).catch(() => {});
 
   await revalidateTaskFamily(taskId, dependsOnTaskId);
+  return { success: true };
+}
+
+// Updates an existing TaskDependency row's endpoints in place (not a
+// delete+recreate) — the row's id, and any future audit trail keyed to it,
+// stays continuous across a drag-to-reconnect on the canvas. Mirrors
+// addTaskDependency's cycle-check, but re-fetches edges EXCLUDING this row's
+// own current values first, since a row being moved should never be
+// compared against its own pre-move state.
+export async function reconnectTaskDependency(
+  dependencyId: string,
+  newTaskId: string,
+  newDependsOnTaskId: string
+): Promise<ActionResult> {
+  if (newTaskId === newDependsOnTaskId) {
+    return { success: false, error: 'A task cannot depend on itself' };
+  }
+
+  const existing = await prisma.taskDependency.findUnique({
+    where: { id: dependencyId },
+    select: { taskId: true, dependsOnTaskId: true },
+  }).catch(() => null);
+  if (!existing) return { success: false, error: 'Dependency not found' };
+
+  const otherEdges = await prisma.taskDependency.findMany({
+    where: { id: { not: dependencyId } },
+    select: { taskId: true, dependsOnTaskId: true },
+  });
+
+  if (wouldCreateCycle(otherEdges.map((e) => ({ id: e.taskId, dependsOnId: e.dependsOnTaskId })), newTaskId, newDependsOnTaskId)) {
+    return {
+      success: false,
+      error: 'This would create a circular dependency — the prerequisite task already (directly or indirectly) depends on this task.',
+    };
+  }
+
+  try {
+    await prisma.taskDependency.update({
+      where: { id: dependencyId },
+      data: { taskId: newTaskId, dependsOnTaskId: newDependsOnTaskId },
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '';
+    if (msg.includes('Unique constraint') || msg.includes('unique')) {
+      return { success: false, error: 'This dependency already exists.' };
+    }
+    return { success: false, error: 'Failed to reconnect dependency.' };
+  }
+
+  await prisma.activityLog.create({
+    data: {
+      taskId: newTaskId,
+      actionType: 'task_dependency_reconnected',
+      payload: {
+        dependencyId,
+        oldTaskId: existing.taskId,
+        oldDependsOnTaskId: existing.dependsOnTaskId,
+        newTaskId,
+        newDependsOnTaskId,
+      },
+    },
+  }).catch(() => {});
+
+  await revalidateTaskFamily(existing.taskId, existing.dependsOnTaskId);
+  await revalidateTaskFamily(newTaskId, newDependsOnTaskId);
   return { success: true };
 }
 

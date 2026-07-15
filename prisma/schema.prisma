@@ -11,6 +11,7 @@ enum UserRole {
   admin
   senior_site_engineer
   site_engineer
+  client
 }
 
 enum UserStatus {
@@ -38,9 +39,12 @@ enum DependencyCategory {
 }
 
 enum CompletionStatus {
-  pending
-  delivered
-  not_required
+  YES
+  NO
+  ON_HOLD
+  PENDING
+  REVISIONS
+  PROCEED
 }
 
 // NOTE: the two enums below use UPPER_CASE members, diverging from the
@@ -77,6 +81,12 @@ model UserProfile {
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
 
+  // A `client`-role user is scoped to exactly one project — every draft-
+  // sequence server action checks this against the draft/node/edge being
+  // touched rather than trusting a client-supplied project id.
+  clientProjectId String?  @map("client_project_id") @db.Uuid
+  clientProject   Project? @relation(fields: [clientProjectId], references: [id], onDelete: SetNull)
+
   @@map("user_profiles")
 }
 
@@ -89,13 +99,68 @@ model Project {
   photoUrl  String?  @map("photo_url")
   siteLatitude  Decimal? @map("site_latitude") @db.Decimal(10, 7)
   siteLongitude Decimal? @map("site_longitude") @db.Decimal(10, 7)
+  // Geofence radius for mobile attendance check-in/out distance validation.
+  // Null means "not configured" — the mobile app falls back to its own
+  // hardcoded default rather than treating null as a zero-radius site.
+  siteRadiusMeters Int? @map("site_radius_meters")
+  // Project-wide SFT target — distinct from any individual HvacTask.totalSft
+  // (a per-task target). Used by lib/data/sft.ts's getProjectSftProgress()
+  // as the denominator for the project-level "X of Y sqft done" rollup.
+  totalSft  Decimal? @map("total_sft") @db.Decimal(10, 2)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   works     Work[]
   inventoryItems InventoryItem[]
   attendanceRecords AttendanceRecord[]
+  clientProfiles UserProfile[]
+  draftSequences DraftSequence[]
+  dailyProgressReports DailyProgressReport[]
 
   @@map("projects")
+}
+
+model DraftSequence {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String          @map("project_id") @db.Uuid
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy String          @map("created_by") @db.Uuid
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  nodes     DraftTaskNode[]
+  edges     DraftTaskEdge[]
+
+  @@map("draft_sequences")
+}
+
+model DraftTaskNode {
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  draftSequenceId     String        @map("draft_sequence_id") @db.Uuid
+  draftSequence       DraftSequence @relation(fields: [draftSequenceId], references: [id], onDelete: Cascade)
+  label               String
+  notes               String?       @db.Text
+  plannedDurationDays Int?          @map("planned_duration_days")
+  positionX           Float         @map("position_x")
+  positionY           Float         @map("position_y")
+  createdAt           DateTime      @default(now()) @map("created_at")
+
+  edgesAsSource DraftTaskEdge[] @relation("DraftEdgeSource")
+  edgesAsTarget DraftTaskEdge[] @relation("DraftEdgeTarget")
+
+  @@map("draft_task_nodes")
+}
+
+model DraftTaskEdge {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  draftSequenceId String        @map("draft_sequence_id") @db.Uuid
+  draftSequence   DraftSequence @relation(fields: [draftSequenceId], references: [id], onDelete: Cascade)
+  sourceNodeId    String        @map("source_node_id") @db.Uuid
+  targetNodeId    String        @map("target_node_id") @db.Uuid
+  sourceNode      DraftTaskNode @relation("DraftEdgeSource", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode      DraftTaskNode @relation("DraftEdgeTarget", fields: [targetNodeId], references: [id], onDelete: Cascade)
+
+  @@map("draft_task_edges")
+  @@unique([sourceNodeId, targetNodeId])
 }
 
 model Work {
@@ -124,21 +189,60 @@ model HvacTask {
   createdBy   String?    @map("created_by") @db.Uuid
   plannedStartDate DateTime? @map("planned_start_date") @db.Date
   dueDate     DateTime?  @map("due_date") @db.Date
+  actualStartDate DateTime? @map("actual_start_date") @db.Date
+  actualEndDate   DateTime? @map("actual_end_date") @db.Date
   workId      String?    @map("work_id") @db.Uuid
+  taskTypeId  String?    @map("task_type_id") @db.Uuid
   totalSft    Decimal?   @map("total_sft") @db.Decimal(10, 2)
+  // Manual override for the flowchart canvas — when set, the flowchart
+  // renders the node here instead of at its dagre-computed position. Null
+  // means "still auto-laid-out", not "positioned at 0,0".
+  manualPositionX Float? @map("manual_position_x")
+  manualPositionY Float? @map("manual_position_y")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
+  // Soft-delete, scoped only to the bulk "Delete All Tasks" flow (see
+  // app/actions/bulk-delete.ts) — every other delete action in this app is
+  // still a real, immediate delete. Non-null means "removed by a bulk
+  // delete-all and pending either restore or permanent purge"; every query
+  // that lists tasks for the live app must filter deletedAt: null. Dependent
+  // rows (DependencyItem, TaskDependency, SftProgressEntry,
+  // DependencyCompletion) are NOT soft-deleted themselves — they stay in
+  // place and are excluded from view solely by their parent task already
+  // being filtered out, which is simpler than threading deletedAt through
+  // every related table.
+  deletedAt   DateTime?  @map("deleted_at")
 
   work               Work?               @relation(fields: [workId], references: [id])
+  taskType           TaskType?           @relation(fields: [taskTypeId], references: [id])
   dependencyItems    DependencyItem[]
   activityLogs       ActivityLog[]
   sftProgressEntries SftProgressEntry[]
   blockedByDeps      TaskDependency[]    @relation("TaskBlockedBy")
   blocksDeps         TaskDependency[]    @relation("TaskBlocks")
+  parallelLinksA     TaskParallelLink[]  @relation("ParallelLinkA")
+  parallelLinksB     TaskParallelLink[]  @relation("ParallelLinkB")
+  dailyProgressReports DailyProgressReport[]
 
   @@map("hvac_tasks")
   @@index([workId])
   @@index([status])
+  @@index([taskTypeId])
+  @@index([deletedAt])
+}
+
+// Independent of trade/Work — any task can carry any type. Used only to
+// auto-suggest a due date at creation time (defaultDurationDays working days
+// from the planned start date); it has no other effect on scheduling.
+model TaskType {
+  id                  String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String     @unique
+  defaultDurationDays Int        @map("default_duration_days")
+  createdAt           DateTime   @default(now()) @map("created_at")
+
+  tasks               HvacTask[]
+
+  @@map("task_types")
 }
 
 // Cross-trade task-to-task dependency, independent of the checklist system
@@ -161,6 +265,26 @@ model TaskDependency {
   @@index([dependsOnTaskId])
 }
 
+// Symmetric, non-blocking link between two tasks that just happen to run
+// alongside each other (pure visual grouping) — unlike TaskDependency, has
+// zero effect on status transitions, the delay engine, or any gating logic
+// anywhere. (taskAId, taskBId) is stored in whatever order the two tasks
+// were clicked in; server actions check both orderings before inserting so
+// the same pair can never be linked twice regardless of click order.
+model TaskParallelLink {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskAId   String   @map("task_a_id") @db.Uuid
+  taskA     HvacTask @relation("ParallelLinkA", fields: [taskAId], references: [id], onDelete: Cascade)
+  taskBId   String   @map("task_b_id") @db.Uuid
+  taskB     HvacTask @relation("ParallelLinkB", fields: [taskBId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("task_parallel_links")
+  @@unique([taskAId, taskBId])
+  @@index([taskAId])
+  @@index([taskBId])
+}
+
 model DependencyItem {
   id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   taskId      String             @map("task_id") @db.Uuid
@@ -180,7 +304,7 @@ model DependencyItem {
 model DependencyCompletion {
   id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   itemId      String           @unique @map("item_id") @db.Uuid
-  status      CompletionStatus @default(pending)
+  status      CompletionStatus @default(PENDING)
   comment     String?
   completedBy String?          @map("completed_by") @db.Uuid
   completedAt DateTime?        @map("completed_at")
@@ -216,12 +340,20 @@ model DependencyTemplateItem {
   @@map("dependency_template_items")
 }
 
+enum HolidayType {
+  national_holiday
+  festival_holiday
+  regional_holiday
+  company_shutdown
+}
+
 model Holiday {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  date        DateTime @unique @db.Date
-  name        String   @db.VarChar(200)
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date        DateTime    @unique @db.Date
+  name        String      @db.VarChar(200)
+  type        HolidayType @default(national_holiday)
   description String?
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
 
   @@map("holidays")
 }
@@ -316,4 +448,79 @@ model AttendanceRecord {
   @@map("attendance_records")
   @@index([userId, clientCapturedAt])
   @@index([projectId])
+}
+
+enum WeatherCondition {
+  SUNNY
+  CLOUDY
+  RAINY
+  WINDY
+  OTHER
+}
+
+// Written by the mobile app via the Supabase client, not by this repo's own
+// server actions — same pattern as AttendanceRecord above (this repo only
+// owns the shape of the table). userId stays a loose uuid, resolved via a
+// separate UserProfile lookup at read time, same as elsewhere in this schema.
+//
+// Real named fields (previously fieldOne–fieldFour placeholders) — only
+// workType/workDescription are required, everything else is optional so a
+// site engineer filling this out in a hurry isn't blocked by every field.
+//
+// KNOWN RISK — this is now the THIRD table with the same unresolved
+// dependency as AttendanceRecord/UserProfile: none of this works unless a
+// Supabase RLS policy exists permitting an authenticated site-engineer to
+// insert their own rows (and, for photos, into
+// DailyProgressReportPhoto/sft_progress_entries too — see below). That
+// policy's live status is still unverified from either repo's source; this
+// schema change does not resolve it, and adds two more tables to the same
+// open question.
+model DailyProgressReport {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  projectId String?   @map("project_id") @db.Uuid
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  taskId    String?   @map("task_id") @db.Uuid
+  task      HvacTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  workType           String            @map("work_type")
+  workDescription    String            @map("work_description") @db.Text
+  sftCompleted       Decimal?          @map("sft_completed") @db.Decimal(10, 2)
+  workforceCount     Int?              @map("workforce_count")
+  weatherCondition   WeatherCondition? @map("weather_condition")
+  materialsUsed      String?           @map("materials_used") @db.Text
+  equipmentUsed      String?           @map("equipment_used") @db.Text
+  siteIssues         String?           @map("site_issues") @db.Text
+  safetyObservations String?           @map("safety_observations") @db.Text
+  visitorsOnSite     String?           @map("visitors_on_site") @db.Text
+  remarks            String?           @db.Text
+
+  reportDate       DateTime @map("report_date") @db.Date
+  clientCapturedAt DateTime @map("client_captured_at")
+  serverReceivedAt DateTime @default(now()) @map("server_received_at")
+
+  photos DailyProgressReportPhoto[]
+
+  @@map("daily_progress_reports")
+  @@index([userId, reportDate])
+  @@index([projectId])
+}
+
+// Uploaded during sync, not at photo-capture time — the mobile app queues
+// only each photo's local device URI (small, queue-friendly) and uploads
+// the actual bytes to Supabase Storage as a separate sync step, inserting
+// this row once that upload succeeds. storagePath is a private-bucket
+// object path (not a browsable URL), same convention as
+// InventoryTransaction.sourceDocPath — signed URLs are generated fresh at
+// render time, never persisted.
+model DailyProgressReportPhoto {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId    String              @map("report_id") @db.Uuid
+  report      DailyProgressReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  storagePath String              @map("storage_path")
+  caption     String?
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  @@map("daily_progress_report_photos")
+  @@index([reportId])
 }

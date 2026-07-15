@@ -15,8 +15,9 @@
 -- ============================================================
 
 -- ── Status recalculation ──────────────────────────────────────
--- A task becomes "ready" once all 6 mandatory dependency categories are
--- fully delivered (or explicitly marked not_required), and falls back to
+-- A task becomes "ready" once all 6 mandatory dependency categories have
+-- every item marked YES or PROCEED (the two "clears" states out of the six
+-- — NO / ON_HOLD / PENDING / REVISIONS all block), and falls back to
 -- "blocked" if it regresses. Tasks with fewer than 6 categories seeded
 -- stay in "draft". in_progress / on_hold / completed are never touched here
 -- — those are user-driven transitions (see app/actions/hvac-tasks.ts).
@@ -41,7 +42,7 @@ BEGIN
     RETURN;
   END IF;
 
-  -- COALESCE the missing completion row to 'pending' before the IN check —
+  -- COALESCE the missing completion row to 'PENDING' before the IN check —
   -- an item that has never been touched has no dependency_completions row
   -- at all, so dc.status is NULL. BOOL_AND() silently skips NULL inputs
   -- rather than treating them as false, so a category where every item is
@@ -50,7 +51,7 @@ BEGIN
   -- in as incomplete).
   SELECT COALESCE(BOOL_AND(cat_complete), false) INTO v_all_complete
   FROM (
-    SELECT di.category, BOOL_AND(COALESCE(dc.status::text, 'pending') IN ('delivered', 'not_required')) AS cat_complete
+    SELECT di.category, BOOL_AND(COALESCE(dc.status::text, 'PENDING') IN ('YES', 'PROCEED')) AS cat_complete
     FROM dependency_items di
     LEFT JOIN dependency_completions dc ON dc.item_id = di.id
     WHERE di.task_id = p_task_id AND di.is_mandatory = true

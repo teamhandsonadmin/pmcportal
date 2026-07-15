@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; dot: string }> = {

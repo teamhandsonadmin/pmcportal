@@ -12,11 +12,14 @@ export const dynamic = 'force-dynamic';
 
 export default async function NewWorkTaskPage({ params }: Props) {
   const { workId } = await params;
-  const [work, assignableUsers] = await Promise.all([
+  const [work, assignableUsers, taskTypeRows] = await Promise.all([
     prisma.work.findUnique({ where: { id: workId }, select: { id: true, name: true, code: true, color: true } }).catch(() => null),
     getAssignableUsers(),
+    prisma.taskType.findMany({ orderBy: { name: 'asc' } }).catch(() => []),
   ]);
   if (!work) notFound();
+
+  const taskTypes = taskTypeRows.map((t) => ({ id: t.id, name: t.name, defaultDurationDays: t.defaultDurationDays }));
 
   return (
     <div className="max-w-xl">
@@ -37,7 +40,7 @@ export default async function NewWorkTaskPage({ params }: Props) {
       </div>
 
       <div className="bg-card border border-border rounded-xl p-6 mt-6 card-shadow">
-        <TaskForm workId={work.id} assignableUsers={assignableUsers} />
+        <TaskForm workId={work.id} assignableUsers={assignableUsers} taskTypes={taskTypes} />
       </div>
     </div>
   );

@@ -19,7 +19,7 @@ export interface WorkBreakdown {
 }
 
 export async function getWorksData() {
-  const [tasks, works, users, deps, recentActivityRaw] = await Promise.all([
+  const [tasks, works, users, deps, parallelLinks, recentActivityRaw] = await Promise.all([
     prisma.hvacTask.findMany({
       include: {
         dependencyItems: { select: { completion: { select: { status: true } } } },
@@ -34,6 +34,10 @@ export async function getWorksData() {
     // CHANGELOG_TASK_DEPENDENCIES.md); the existing client-side project
     // filter in TasksExplorer narrows what the graph shows.
     prisma.taskDependency.findMany({ select: { id: true, taskId: true, dependsOnTaskId: true } }),
+    // Symmetric, non-blocking — deliberately NOT read anywhere near
+    // prereqsByTask/stats below. Only ever used for the canvas's dashed
+    // parallel-link rendering.
+    prisma.taskParallelLink.findMany({ select: { id: true, taskAId: true, taskBId: true } }),
     prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 12 }),
   ]);
 
@@ -68,6 +72,17 @@ export async function getWorksData() {
 
   const userMap = new Map(users.map((u) => [u.id, u.fullName]));
 
+  // Prerequisite-completion counts for the flowchart's "X of Y done"
+  // convergence badge — built from the same `tasks`/`deps` already fetched
+  // above, not a second query (deps.dependsOnTaskId is the prerequisite;
+  // deps.taskId is the task waiting on it).
+  const statusById = new Map(tasks.map((t) => [t.id, t.status]));
+  const prereqsByTask = new Map<string, string[]>();
+  for (const d of deps) {
+    if (!prereqsByTask.has(d.taskId)) prereqsByTask.set(d.taskId, []);
+    prereqsByTask.get(d.taskId)!.push(d.dependsOnTaskId);
+  }
+
   const stats: DashboardStats = {
     readyCount: tasks.filter((t) => t.status === 'ready').length,
     inProgressCount: tasks.filter((t) => t.status === 'in_progress').length,
@@ -96,10 +111,15 @@ export async function getWorksData() {
       workName: t.work?.name ?? 'Unassigned',
       workCode: t.work?.code ?? '—',
       workColor: t.work?.color ?? '#9CA3AF',
+      manualPositionX: t.manualPositionX,
+      manualPositionY: t.manualPositionY,
+      prerequisiteCount: prereqsByTask.get(t.id)?.length ?? 0,
+      prerequisiteCompletedCount: (prereqsByTask.get(t.id) ?? []).filter((id) => statusById.get(id) === 'completed').length,
     };
   });
 
   const edges: GraphEdgeInput[] = deps.map((d) => ({ id: d.id, source: d.dependsOnTaskId, target: d.taskId }));
+  const parallelEdges: GraphEdgeInput[] = parallelLinks.map((p) => ({ id: p.id, source: p.taskAId, target: p.taskBId }));
 
-  return { tasks, works, stats, rows, edges, workBreakdown, recentActivity };
+  return { tasks, works, stats, rows, edges, parallelEdges, workBreakdown, recentActivity };
 }

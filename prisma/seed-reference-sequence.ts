@@ -497,7 +497,7 @@ async function main() {
     const dedupeKey = `${taskId}:${dependsOnTaskId}`;
     if (existingEdgeSet.has(dedupeKey)) { edgesSkippedDup++; continue; }
 
-    if (wouldCreateCycle(workingEdges, taskId, dependsOnTaskId)) {
+    if (wouldCreateCycle(workingEdges.map((e) => ({ id: e.taskId, dependsOnId: e.dependsOnTaskId })), taskId, dependsOnTaskId)) {
       console.warn(`SKIPPED (would create a cycle): ${depKey} -> ${prereqKey}`);
       edgesSkippedCycle++;
       continue;

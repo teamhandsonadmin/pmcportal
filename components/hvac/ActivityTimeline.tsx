@@ -18,6 +18,7 @@ function EventIcon({ type }: { type: ActivityEvent['actionType'] }) {
     inventory_item_created:    '▤',
     inventory_transaction_recorded: '⇅',
     inventory_ocr_intake:      '⌗',
+    planned_dates_updated:     '📅',
   };
   return <span className="text-sm">{icons[type]}</span>;
 }
@@ -93,6 +94,11 @@ function EventDescription({ event }: { event: ActivityEvent }) {
           OCR invoice intake: {String(p?.itemCount ?? 0)} item(s) recorded
         </span>
       );
+
+    case 'planned_dates_updated': {
+      const fields = (p?.fields as string[] | undefined) ?? [];
+      return <span>Planned dates updated: <span className="font-mono">{fields.join(', ') || '—'}</span></span>;
+    }
 
     default:
       return <span>Activity recorded</span>;

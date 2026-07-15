@@ -115,16 +115,19 @@ const SECTIONS = [
   {
     label: 'Workspace',
     items: [
-      { label: 'Dashboard',               href: '/projects',    icon: Icons.Dashboard,     exact: true,  badge: 0, disabled: true },
+      { label: 'Dashboard',               href: '/projects',    icon: Icons.Dashboard,     exact: true,  badge: 0 },
       {
         label: 'Tasks & Works', href: '/works', icon: Icons.Tasks, exact: false, badge: 0,
-        children: [{ label: 'Flowchart', href: '/works/flowchart' }],
+        children: [
+          { label: 'Flowchart', href: '/works/flowchart' },
+          { label: 'Gantt Chart', href: '/gantt' },
+        ],
       },
       { label: 'Inventory',               href: '/inventory',   icon: Icons.Inventory,     exact: false, badge: 0, disabled: true },
       { label: 'Dependencies',            href: '/hvac',        icon: Icons.Dependencies,  exact: false, badge: 0, disabled: true },
-      { label: 'Schedule & Calendar',     href: '/calendar',    icon: Icons.Calendar,      exact: false, badge: 0, disabled: true },
+      { label: 'Schedule & Calendar',     href: '/calendar',    icon: Icons.Calendar,      exact: false, badge: 0 },
       { label: 'Attendance',              href: '/attendance',  icon: Icons.Attendance,    exact: false, badge: 0, disabled: true },
-      { label: 'Daily Progress Reports',  href: '/dpr',         icon: Icons.DPR,           exact: false, badge: 0, disabled: true },
+      { label: 'Daily Progress Reports',  href: '/dpr',         icon: Icons.DPR,           exact: false, badge: 0 },
       { label: 'Site Photos',             href: '/photos',      icon: Icons.Photos,        exact: false, badge: 0, disabled: true },
       { label: 'Documents',               href: '/documents',   icon: Icons.Documents,     exact: false, badge: 0, disabled: true },
     ],
@@ -161,9 +164,15 @@ function NavItem({
   pathname: string;
 }) {
   const checkHref = item.activeHref ?? item.href;
+  // A child whose href isn't a sub-path of the parent's own href (e.g.
+  // "Gantt Chart" at /gantt, nested under "Tasks & Works" at /works) needs
+  // its own check here too — otherwise visiting it directly leaves the
+  // parent un-highlighted and collapses the children list away, hiding the
+  // very link the user is currently on. Not an issue for "Flowchart" only
+  // because /works/flowchart already starts with /works by coincidence.
   const active = item.exact
     ? pathname === checkHref
-    : pathname.startsWith(checkHref);
+    : pathname.startsWith(checkHref) || (item.children?.some((c) => pathname.startsWith(c.href)) ?? false);
   const hasBadge = (item.badge ?? 0) > 0;
   const disabled = item.disabled ?? false;
 

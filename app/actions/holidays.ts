@@ -5,15 +5,8 @@ import { revalidatePath } from 'next/cache';
 import { AddHolidaySchema } from '@/lib/validations/hvac';
 import type { ActionResult } from '@/lib/types/hvac';
 
-export async function addHoliday(
-  _prevState: ActionResult,
-  formData: FormData
-): Promise<ActionResult> {
-  const parsed = AddHolidaySchema.safeParse({
-    date: formData.get('date'),
-    name: formData.get('name'),
-    description: formData.get('description') || null,
-  });
+export async function addHoliday(data: { date: string; name: string; type: string }): Promise<ActionResult> {
+  const parsed = AddHolidaySchema.safeParse({ date: data.date, name: data.name, type: data.type });
 
   if (!parsed.success) {
     return { success: false, error: parsed.error.flatten().fieldErrors as Record<string, string[]> };
@@ -24,7 +17,30 @@ export async function addHoliday(
       data: {
         date: new Date(parsed.data.date),
         name: parsed.data.name,
-        description: parsed.data.description ?? null,
+        type: parsed.data.type as never,
+      },
+    });
+  } catch {
+    return { success: false, error: 'Holiday already exists for that date, or failed to save.' };
+  }
+
+  revalidatePath('/calendar');
+  return { success: true };
+}
+
+export async function updateHoliday(id: string, data: { date: string; name: string; type: string }): Promise<ActionResult> {
+  const parsed = AddHolidaySchema.safeParse({ date: data.date, name: data.name, type: data.type });
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.flatten().fieldErrors as Record<string, string[]> };
+  }
+
+  try {
+    await prisma.holiday.update({
+      where: { id },
+      data: {
+        date: new Date(parsed.data.date),
+        name: parsed.data.name,
+        type: parsed.data.type as never,
       },
     });
   } catch {

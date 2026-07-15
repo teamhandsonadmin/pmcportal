@@ -6,6 +6,8 @@ import type { ReactFlowInstance } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { TaskDependencyGraph, type GraphEdgeInput } from '@/components/tasks/TaskDependencyGraph';
+import { BulkDeleteDialog } from '@/components/tasks/BulkDeleteDialog';
+import type { TaskTypeOption } from '@/components/hvac/TaskTypeManager';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
 import type { TaskStatus } from '@/lib/types/hvac';
 
@@ -24,13 +26,38 @@ export interface TaskRow {
   workName: string;
   workCode: string;
   workColor: string;
+  manualPositionX: number | null;
+  manualPositionY: number | null;
+  prerequisiteCount: number;
+  prerequisiteCompletedCount: number;
+}
+
+export interface WorkOption {
+  id: string;
+  name: string;
+  code: string;
+  color: string;
 }
 
 const STATUSES: TaskStatus[] = ['draft', 'ready', 'in_progress', 'on_hold', 'blocked', 'completed'];
 
-export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEdgeInput[] }) {
+export function TasksExplorer({
+  rows,
+  edges,
+  parallelEdges,
+  initialWork,
+  works,
+  taskTypes,
+}: {
+  rows: TaskRow[];
+  edges: GraphEdgeInput[];
+  parallelEdges: GraphEdgeInput[];
+  initialWork?: string;
+  works: WorkOption[];
+  taskTypes: TaskTypeOption[];
+}) {
   const [search, setSearch] = useState('');
-  const [workF, setWorkF] = useState('');
+  const [workF, setWorkF] = useState(initialWork ?? '');
   const [statusF, setStatusF] = useState<TaskStatus | ''>('');
   const [assigneeF, setAssigneeF] = useState('');
   const [projectF, setProjectF] = useState('');
@@ -90,6 +117,33 @@ export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEd
     [rows, search, workF, statusF, assigneeF, projectF]
   );
 
+  // Mapped separately (not inline in JSX) so this array only gets a new
+  // reference when `filtered` actually changes — TaskDependencyGraph's own
+  // useMemo/useEffect are keyed on this reference, and an inline `.map()` in
+  // JSX recreates it on every render regardless of whether the underlying
+  // data changed, which fed an infinite render loop (recompute -> resync
+  // local state -> re-render -> recompute -> ...).
+  const graphTasks = useMemo(
+    () =>
+      filtered.map((r) => ({
+        id: r.id,
+        taskId: r.taskId,
+        taskName: r.taskName,
+        status: r.status,
+        workId: r.workId,
+        workCode: r.workCode,
+        workColor: r.workColor,
+        assigneeName: r.assigneeName,
+        plannedStartDate: r.plannedStartDate,
+        dueDate: r.dueDate,
+        manualPositionX: r.manualPositionX,
+        manualPositionY: r.manualPositionY,
+        prerequisiteCount: r.prerequisiteCount,
+        prerequisiteCompletedCount: r.prerequisiteCompletedCount,
+      })),
+    [filtered]
+  );
+
   const hasFilter = !!(search || workF || statusF || assigneeF || projectF);
   const clearFilters = () => { setSearch(''); setWorkF(''); setStatusF(''); setAssigneeF(''); setProjectF(''); };
 
@@ -97,6 +151,11 @@ export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEd
     const visibleIds = new Set(filtered.map((r) => r.id));
     return edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target));
   }, [filtered, edges]);
+
+  const filteredParallelEdges = useMemo(() => {
+    const visibleIds = new Set(filtered.map((r) => r.id));
+    return parallelEdges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target));
+  }, [filtered, parallelEdges]);
 
   return (
     <div
@@ -162,45 +221,24 @@ export function TasksExplorer({ rows, edges }: { rows: TaskRow[]; edges: GraphEd
           >
             {showAsFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
           </Button>
+          <BulkDeleteDialog scope={{ search, workCode: workF, status: statusF, assigneeName: assigneeF, projectName: projectF }} />
         </div>
       </div>
 
       <div className="flex-1 min-h-[480px]">
-        {filtered.length === 0 ? (
-          <EmptyState hasFilter={hasFilter} onClear={clearFilters} />
-        ) : (
-          <TaskDependencyGraph
-            tasks={filtered.map((r) => ({
-              id: r.id,
-              taskId: r.taskId,
-              taskName: r.taskName,
-              status: r.status,
-              workCode: r.workCode,
-              workColor: r.workColor,
-              assigneeName: r.assigneeName,
-            }))}
-            edges={filteredEdges}
-            isFullscreen={showAsFullscreen}
-            onReady={(instance) => { rfInstanceRef.current = instance; }}
-          />
-        )}
+        <TaskDependencyGraph
+          tasks={graphTasks}
+          edges={filteredEdges}
+          parallelEdges={filteredParallelEdges}
+          works={works}
+          taskTypes={taskTypes}
+          isFullscreen={showAsFullscreen}
+          onReady={(instance) => { rfInstanceRef.current = instance; }}
+          emptyState={filtered.length === 0 ? { hasFilter, onClear: clearFilters } : undefined}
+          fullscreenContainer={containerRef}
+        />
       </div>
     </div>
   );
 }
 
-function EmptyState({ hasFilter, onClear }: { hasFilter: boolean; onClear: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D1D5DB" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-      </div>
-      <p className="text-[13px] font-semibold text-gray-300">No tasks found</p>
-      {hasFilter && (
-        <button onClick={onClear} className="mt-3 text-[12px] font-semibold text-gray-400 hover:text-gray-900 underline">
-          Clear filters
-        </button>
-      )}
-    </div>
-  );
-}

@@ -51,3 +51,17 @@ export function calcOverallProgress(
   const sum = categories.reduce((acc, c) => acc + c.completionPct, 0);
   return Math.round(sum / categories.length);
 }
+
+// 'YYYY-MM-DD' for a calendar day — deliberately NOT toISOString().slice(0, 10),
+// which converts to UTC first and can shift the date by a day depending on the
+// caller's timezone offset. Pass utc: true when reading a Postgres DATE column
+// (Prisma returns those as UTC-midnight Date objects with no real timezone of
+// their own), and utc: false (the default) for a Date representing a day a
+// user picked in their local browser — e.g. from a calendar/date picker.
+export function formatDateKey(date: Date, opts?: { utc?: boolean }): string {
+  const utc = opts?.utc ?? false;
+  const y = utc ? date.getUTCFullYear() : date.getFullYear();
+  const m = (utc ? date.getUTCMonth() : date.getMonth()) + 1;
+  const d = utc ? date.getUTCDate() : date.getDate();
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}

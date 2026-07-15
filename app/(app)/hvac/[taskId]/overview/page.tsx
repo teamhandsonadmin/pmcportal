@@ -4,9 +4,13 @@ import { TaskStatusControl } from '@/components/hvac/TaskStatusControl';
 import { DependencyProgress, OverallProgress } from '@/components/hvac/DependencyProgress';
 import { SftProgressCard } from '@/components/hvac/SftProgressCard';
 import { TaskDependencyCard } from '@/components/hvac/TaskDependencyCard';
+import { PlannedDatesEditor } from '@/components/hvac/PlannedDatesEditor';
+import { ActualDateField } from '@/components/hvac/ActualDatesEditor';
+import { ScheduleImpactPanel } from '@/components/hvac/ScheduleImpactPanel';
 import { getTaskDependencyContext } from '@/app/actions/task-dependencies';
+import { getTaskScheduleImpact } from '@/lib/data/delay-engine';
 import { isLocked } from '@/lib/utils/status-rules';
-import { formatDate, formatDateTime } from '@/lib/utils/format';
+import { formatDate, formatDateKey, formatDateTime } from '@/lib/utils/format';
 import type { CategoryProgress } from '@/lib/types/hvac';
 import { isItemDone } from '@/lib/types/hvac';
 
@@ -19,7 +23,7 @@ export const dynamic = 'force-dynamic';
 export default async function TaskOverviewPage({ params }: Props) {
   const { taskId } = await params;
 
-  const [task, depItems, sftEntries, dependencyContext] = await Promise.all([
+  const [task, depItems, sftEntries, dependencyContext, scheduleImpact] = await Promise.all([
     prisma.hvacTask.findUnique({ where: { id: taskId } }),
     prisma.dependencyItem.findMany({
       where: { taskId },
@@ -30,6 +34,7 @@ export default async function TaskOverviewPage({ params }: Props) {
       orderBy: { entryDate: 'desc' },
     }),
     getTaskDependencyContext(taskId),
+    getTaskScheduleImpact(taskId),
   ]);
 
   if (!task) notFound();
@@ -103,15 +108,48 @@ export default async function TaskOverviewPage({ params }: Props) {
                 <dd className="text-sm text-muted-foreground leading-relaxed">{task.description}</dd>
               </div>
             )}
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Dates</p>
+              {!locked && (
+                <PlannedDatesEditor
+                  taskId={task.id}
+                  plannedStartDate={task.plannedStartDate ? formatDateKey(task.plannedStartDate, { utc: true }) : null}
+                  dueDate={task.dueDate ? formatDateKey(task.dueDate, { utc: true }) : null}
+                />
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <dt className="text-xs text-muted-foreground">Created</dt>
-                <dd className="text-sm font-mono">{formatDate(task.createdAt)}</dd>
+                <dt className="text-xs text-muted-foreground">Planned Start</dt>
+                <dd className="text-sm font-mono">{formatDate(task.plannedStartDate)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-muted-foreground">Due Date</dt>
+                <dt className="text-xs text-muted-foreground">Planned End</dt>
                 <dd className="text-sm font-mono">{formatDate(task.dueDate)}</dd>
               </div>
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Actual Dates</p>
+              <div className="grid grid-cols-2 gap-4">
+                <ActualDateField
+                  taskId={task.id}
+                  field="actualStartDate"
+                  label="Actual Start"
+                  value={task.actualStartDate}
+                  placeholder="Not started yet"
+                />
+                <ActualDateField
+                  taskId={task.id}
+                  field="actualEndDate"
+                  label="Actual Completion"
+                  value={task.actualEndDate}
+                  placeholder="Not completed yet"
+                />
+              </div>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Created</dt>
+              <dd className="text-sm font-mono">{formatDate(task.createdAt)}</dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Last Updated</dt>
@@ -119,6 +157,8 @@ export default async function TaskOverviewPage({ params }: Props) {
             </div>
           </dl>
         </div>
+
+        {scheduleImpact && <ScheduleImpactPanel impact={scheduleImpact} />}
 
         {!locked && (
           <div className="border-t border-border pt-4">
