@@ -18,6 +18,7 @@ import {
   useStore,
   useInternalNode,
   getStraightPath,
+  getSmoothStepPath,
   reconnectEdge,
   type Node,
   type Edge,
@@ -186,6 +187,22 @@ const GraphActionsContext = createContext<GraphActions>({
   hoveredNodeId: null,
 });
 
+// Bulk-imported task names (Seq civil_2, Interiors) are built as
+// "{section header} — {specific action}" so the section grouping stays
+// visible — but a long header eats the fixed-size card's entire 2-line
+// clamp, truncating right before the part that actually varies row to row
+// (every card in a column reading e.g. "Columns 7,8,9,10 & 9 columns 1st
+// lift conrete casting — For…", indistinguishable from its neighbors). If
+// the separator is present, render the header as its own small muted line
+// and give the action text its own clamped lines; otherwise render the
+// plain name exactly as before (a manually-named task with no such prefix
+// isn't affected).
+function splitTaskName(name: string): { category: string | null; action: string } {
+  const sepIdx = name.indexOf(' — ');
+  if (sepIdx === -1) return { category: null, action: name };
+  return { category: name.slice(0, sepIdx), action: name.slice(sepIdx + 3) };
+}
+
 // Field order per Part 4: name, category (Work), task ID — reordered from
 // the previous taskId-first layout. The hover delete button, convergence
 // badge, and floating NodeToolbar are new; everything else about the node's
@@ -294,7 +311,17 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
         </div>
       )}
 
-      <p className="text-[12px] font-semibold text-foreground leading-tight line-clamp-2">{data.taskName}</p>
+      {(() => {
+        const { category, action } = splitTaskName(data.taskName);
+        return (
+          <>
+            {category && (
+              <p className="text-[9.5px] text-muted-foreground leading-tight line-clamp-1">{category}</p>
+            )}
+            <p className="text-[12px] font-semibold text-foreground leading-tight line-clamp-2">{action}</p>
+          </>
+        );
+      })()}
       <span className="text-[10px] text-muted-foreground">{data.workCode}</span>
       <span className="font-mono text-[10px] font-bold truncate" style={{ color: cfg.text }}>{data.taskId}</span>
 
@@ -394,22 +421,47 @@ function FloatingEdge({ id, source, target, style, markerEnd, selected, data }: 
   const targetNode = useInternalNode(target);
   if (!sourceNode || !targetNode) return null;
 
-  const sourceIntersection = getNodeIntersection(sourceNode, targetNode);
-  const targetIntersection = getNodeIntersection(targetNode, sourceNode);
-
-  const [path] = getStraightPath({
-    sourceX: sourceIntersection.x,
-    sourceY: sourceIntersection.y,
-    targetX: targetIntersection.x,
-    targetY: targetIntersection.y,
-  });
+  // A manually-arranged grid's row-wrap edge (last task of one row to the
+  // first task of the next) jumps both axes at once — a straight line
+  // between floating intersection points reads as a stray diagonal slash
+  // instead of a flowchart connector. Route just this case as a bottom-to-
+  // top elbow (exit the bottom of the row it's leaving, enter the top of
+  // the row it's joining) instead of computing a boundary intersection
+  // toward the other node's center.
+  let path: string;
+  let labelX: number;
+  let labelY: number;
+  if (data?.bigVerticalJump) {
+    const sw = sourceNode.measured.width ?? NODE_WIDTH;
+    const sh = sourceNode.measured.height ?? NODE_HEIGHT;
+    const tw = targetNode.measured.width ?? NODE_WIDTH;
+    const sPos = sourceNode.internals.positionAbsolute;
+    const tPos = targetNode.internals.positionAbsolute;
+    [path, labelX, labelY] = getSmoothStepPath({
+      sourceX: sPos.x + sw / 2,
+      sourceY: sPos.y + sh,
+      sourcePosition: Position.Bottom,
+      targetX: tPos.x + tw / 2,
+      targetY: tPos.y,
+      targetPosition: Position.Top,
+      borderRadius: 12,
+    });
+  } else {
+    const sourceIntersection = getNodeIntersection(sourceNode, targetNode);
+    const targetIntersection = getNodeIntersection(targetNode, sourceNode);
+    [path] = getStraightPath({
+      sourceX: sourceIntersection.x,
+      sourceY: sourceIntersection.y,
+      targetX: targetIntersection.x,
+      targetY: targetIntersection.y,
+    });
+    labelX = (sourceIntersection.x + targetIntersection.x) / 2;
+    labelY = (sourceIntersection.y + targetIntersection.y) / 2;
+  }
 
   const effectiveStyle = selected
     ? { ...style, strokeWidth: SELECTED_STROKE_WIDTH, strokeDasharray: undefined }
     : style;
-
-  const labelX = (sourceIntersection.x + targetIntersection.x) / 2;
-  const labelY = (sourceIntersection.y + targetIntersection.y) / 2;
 
   const isParallel = data?.linkType === 'parallel';
   const dependencyType = (data?.dependencyType as DependencyType | undefined) ?? 'FS';
@@ -474,10 +526,15 @@ const AUTO_ALIGN_TOLERANCE_PX = 24;
 function layoutWithDagre(
   nodes: Node[],
   edges: Edge[],
-  manualPositions: Map<string, { x: number; y: number }>
+  manualPositions: Map<string, { x: number; y: number }>,
+  direction: 'TB' | 'LR' = 'TB'
 ): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'TB', nodesep: 56, ranksep: 90 });
+  g.setGraph(
+    direction === 'LR'
+      ? { rankdir: 'LR', nodesep: 70, ranksep: 130 }
+      : { rankdir: 'TB', nodesep: 56, ranksep: 90 }
+  );
   g.setDefaultEdgeLabel(() => ({}));
   nodes.forEach((n) => g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT }));
   // Parallel links are a symmetric, non-blocking visual grouping — there's
@@ -485,6 +542,16 @@ function layoutWithDagre(
   // other, so only series (TaskDependency) edges participate in dagre's
   // rank computation. A parallel link still renders (via positionedEdges
   // below) as a floating line between wherever its two nodes land.
+  //
+  // (Tried feeding parallel edges into dagre too, with minlen: 0, so
+  // same-date pairs would be forced onto the same rank — that crashes
+  // dagre's layout step outright, a real bug in this version's ranking
+  // internals with zero-length edges, not just a bad look. Turned out
+  // unnecessary anyway: two equal-length independent chains linked 1:1 by
+  // index already land on matching ranks purely from each chain's own
+  // length, and dagre's node-insertion-order tie-break keeps each chain on
+  // its own consistent side within that rank — verified against the actual
+  // Seq civil_2 shape (two 59-node FS chains) before relying on it.)
   edges.filter((e) => e.data?.linkType !== 'parallel').forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
 
@@ -497,6 +564,10 @@ function layoutWithDagre(
 
   // Snap a free (auto-laid-out) node into exact X alignment with a
   // manually-positioned neighbor it's already nearly aligned with.
+  // The "straight line" axis flips with orientation: in TB, two nodes in a
+  // straight vertical FS chain share an X; in LR, they share a Y instead
+  // (X is now the rank/date axis, not the side-to-side one).
+  const snapAxis = direction === 'LR' ? 'y' : 'x';
   for (const e of edges) {
     const sourceManual = manualPositions.get(e.source);
     const targetManual = manualPositions.get(e.target);
@@ -505,8 +576,9 @@ function layoutWithDagre(
     const freeId = sourceManual ? e.target : e.source;
     const free = autoNodePositions.get(freeId);
     if (!free) continue;
-    if (Math.abs(free.x - manual.x) > 0 && Math.abs(free.x - manual.x) <= AUTO_ALIGN_TOLERANCE_PX) {
-      autoNodePositions.set(freeId, { ...free, x: manual.x });
+    const delta = Math.abs(free[snapAxis] - manual[snapAxis]);
+    if (delta > 0 && delta <= AUTO_ALIGN_TOLERANCE_PX) {
+      autoNodePositions.set(freeId, { ...free, [snapAxis]: manual[snapAxis] });
     }
   }
 
@@ -516,21 +588,42 @@ function layoutWithDagre(
     return { ...n, position: autoNodePositions.get(n.id) ?? { x: 0, y: 0 } };
   });
 
+  const positionById = new Map(positionedNodes.map((n) => [n.id, n.position]));
+  // A manually-arranged grid (e.g. one row per work section, wrapping back
+  // to the left edge for the next row) puts most series edges within a row
+  // at zero vertical delta, but the edge from a row's last task to the next
+  // row's first task jumps both axes at once — a straight line for that one
+  // reads as a stray diagonal slash across the canvas instead of a flowchart
+  // connector. Flagging it here (not just recomputing the threshold inside
+  // FloatingEdge on every render) also means only genuine row-wraps pay for
+  // the elbow route; ordinary same-row and dagre-auto-laid edges (delta 0,
+  // or a small delta from AUTO_ALIGN_TOLERANCE_PX snapping) keep the
+  // straight line they already read fine with.
+  const BIG_VERTICAL_JUMP_THRESHOLD = NODE_HEIGHT * 1.5;
+
   const positionedEdges = edges.map((e) => {
     // Parallel links keep their own dashed/no-arrow styling regardless of
     // whether either endpoint has been manually dragged — the manual-edge
     // recolor below is a series-only concern (it's what signals "this
     // dependency touches a manually-positioned node").
     if (e.data?.linkType === 'parallel') return { ...e, type: 'floating' };
+
+    const sourcePos = positionById.get(e.source);
+    const targetPos = positionById.get(e.target);
+    const bigVerticalJump = !!sourcePos && !!targetPos
+      && Math.abs(sourcePos.y - targetPos.y) > BIG_VERTICAL_JUMP_THRESHOLD;
+    const data = { ...e.data, bigVerticalJump };
+
     if (manualPositions.has(e.source) || manualPositions.has(e.target)) {
       return {
         ...e,
         type: 'floating',
+        data,
         style: { stroke: MANUAL_EDGE_COLOR, strokeWidth: 1.5 },
         markerEnd: { type: MarkerType.ArrowClosed, color: MANUAL_EDGE_COLOR },
       };
     }
-    return { ...e, type: 'floating' };
+    return { ...e, type: 'floating', data };
   });
 
   return { nodes: positionedNodes, edges: positionedEdges };
@@ -580,6 +673,12 @@ export function TaskDependencyGraph({
 }: TaskDependencyGraphProps) {
   const router = useRouter();
   const [darkCanvas, setDarkCanvas] = useState(false);
+  // Horizontal (LR) reads as a left-to-right schedule flow — parallel-linked
+  // pairs on the same rank sit stacked directly on top of each other, dates
+  // progress left to right. Vertical (TB) is the old default. Defaults to
+  // horizontal since that's the layout that actually keeps same-date
+  // parallel pairs visually aligned side by side (see layoutWithDagre).
+  const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('LR');
   const instanceRef = useRef<ReactFlowInstance | null>(null);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>('select');
@@ -697,8 +796,8 @@ export function TaskDependencyGraph({
         .map((t) => [t.id, { x: t.manualPositionX!, y: t.manualPositionY! }])
     );
 
-    return layoutWithDagre(rawNodes, [...rawEdges, ...rawParallelEdges], manualPositions);
-  }, [tasks, edges, parallelEdges, requestDeleteNode, handleConnectFromNode]);
+    return layoutWithDagre(rawNodes, [...rawEdges, ...rawParallelEdges], manualPositions, layoutDirection);
+  }, [tasks, edges, parallelEdges, requestDeleteNode, handleConnectFromNode, layoutDirection]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(computedNodes);
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>(computedEdges);
@@ -1038,9 +1137,12 @@ export function TaskDependencyGraph({
     const targetHasManual = manualPositions.has(targetId);
     if (sourceHasManual && targetHasManual) return; // nothing eligible to re-arrange
 
-    const allEdgesPlain = [...flowEdges.map((e) => ({ source: e.source, target: e.target })), { source: sourceId, target: targetId }];
+    const allEdgesPlain = [
+      ...flowEdges.map((e) => ({ source: e.source, target: e.target, data: e.data })),
+      { source: sourceId, target: targetId, data: { linkType: 'series' } },
+    ];
     const plainNodes: Node[] = nodes.map((n) => ({ id: n.id, type: n.type, data: {}, position: n.position }));
-    const relaid = layoutWithDagre(plainNodes, allEdgesPlain as Edge[], manualPositions);
+    const relaid = layoutWithDagre(plainNodes, allEdgesPlain as Edge[], manualPositions, layoutDirection);
     const relaidById = new Map(relaid.nodes.map((n) => [n.id, n.position]));
 
     setNodes((nds) => nds.map((n) => {
@@ -1053,9 +1155,10 @@ export function TaskDependencyGraph({
   }
 
   // Symmetric and non-blocking — unlike completeConnection, adding a
-  // parallel link never changes any node's rank (see layoutWithDagre, which
-  // excludes 'parallel' edges from dagre's graph entirely), so there's
-  // nothing to re-lay-out here; just show the new dashed line.
+  // parallel link never changes any node's rank (layoutWithDagre excludes
+  // 'parallel' edges from dagre's graph entirely — see the comment there
+  // on why letting dagre rank them isn't needed and actively crashes it),
+  // so there's nothing to re-lay-out here; just show the new dashed line.
   async function completeParallelLink(taskAId: string, taskBId: string) {
     setPendingParallelSource(null);
     setActiveTool('select');
@@ -1371,9 +1474,9 @@ export function TaskDependencyGraph({
     // result locally right away; this re-runs the same dagre layout used
     // for the connect-tool's auto-arrange, with an empty manual-positions
     // map so every node settles into pure auto-layout immediately.
-    const allEdgesPlain = flowEdges.map((e) => ({ source: e.source, target: e.target }));
+    const allEdgesPlain = flowEdges.map((e) => ({ source: e.source, target: e.target, data: e.data }));
     const plainNodes: Node[] = nodes.map((n) => ({ id: n.id, type: n.type, data: {}, position: n.position }));
-    const relaid = layoutWithDagre(plainNodes, allEdgesPlain as Edge[], new Map());
+    const relaid = layoutWithDagre(plainNodes, allEdgesPlain as Edge[], new Map(), layoutDirection);
     const relaidById = new Map(relaid.nodes.map((n) => [n.id, n.position]));
     setNodes((nds) => nds.map((n) => {
       const pos = relaidById.get(n.id);
@@ -1539,6 +1642,28 @@ export function TaskDependencyGraph({
 
       {/* ── Top-right utilities: reset layout + board theme (not part of the tool set, kept accessible) ── */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setLayoutDirection((d) => (d === 'LR' ? 'TB' : 'LR'));
+            // Bounding box changes drastically switching axes — same
+            // rAF + settle-timeout fitView pattern used for project
+            // switches (one frame isn't always enough for every node in a
+            // large graph to be re-measured before fitView reads sizes).
+            requestAnimationFrame(() => instanceRef.current?.fitView({ padding: 0.2, duration: 300 }));
+            setTimeout(() => instanceRef.current?.fitView({ padding: 0.2, duration: 300 }), 300);
+          }}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11.5px] font-medium shadow-sm transition-colors"
+          style={{ borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
+          title={layoutDirection === 'LR' ? 'Switch to vertical layout' : 'Switch to horizontal layout'}
+        >
+          {layoutDirection === 'LR' ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="6" height="18" rx="1.5"/><rect x="14" y="3" width="6" height="18" rx="1.5"/></svg>
+          )}
+          {layoutDirection === 'LR' ? 'Horizontal' : 'Vertical'}
+        </button>
         <button
           type="button"
           onClick={() => instanceRef.current?.fitView({ padding: 0.2, duration: 300 })}
