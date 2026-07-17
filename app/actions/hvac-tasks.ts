@@ -104,8 +104,8 @@ export async function createHvacTask(
   const result = await createHvacTaskCore(parsed.data);
   if (!result.success || !result.data) return result;
 
-  revalidatePath('/hvac');
-  redirect(`/hvac/${result.data.id}`);
+  revalidatePath('/tasks');
+  redirect(`/tasks/${result.data.id}`);
 }
 
 export interface CanvasTaskInput {
@@ -250,9 +250,9 @@ export async function updateTaskStatus(
     },
   }).catch(() => {});
 
-  revalidatePath(`/hvac/${taskId}`);
-  revalidatePath(`/hvac/${taskId}/overview`);
-  revalidatePath('/hvac');
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath(`/tasks/${taskId}/overview`);
+  revalidatePath('/tasks');
   return { success: true };
 }
 
@@ -318,8 +318,8 @@ export async function updateTaskPlannedDates(
     },
   }).catch(() => {});
 
-  revalidatePath(`/hvac/${taskId}`);
-  revalidatePath('/hvac');
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath('/tasks');
   return { success: true };
 }
 
@@ -371,14 +371,14 @@ export async function updateTaskActualDate(
     },
   }).catch(() => {});
 
-  revalidatePath(`/hvac/${taskId}`);
-  revalidatePath(`/hvac/${taskId}/overview`);
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath(`/tasks/${taskId}/overview`);
   return { success: true };
 }
 
-// Flowchart inline rename — deliberately just the name, not a full edit
-// surface; anything beyond quick fields still goes through the task detail
-// page (see components/tasks/TaskDependencyGraph.tsx's quick-edit dialog).
+// Flowchart inline rename — one of several "quick fields" the flowchart's
+// edit dialog covers (name, description, task type, dates); anything beyond
+// those still goes through the task detail page.
 export async function updateTaskName(taskId: string, taskName: string): Promise<ActionResult> {
   const trimmed = taskName.trim();
   if (trimmed.length < 3) return { success: false, error: 'Task name must be at least 3 characters' };
@@ -391,7 +391,39 @@ export async function updateTaskName(taskId: string, taskName: string): Promise<
   }
 
   revalidatePath('/works/flowchart');
-  revalidatePath(`/hvac/${taskId}`);
+  revalidatePath(`/tasks/${taskId}`);
+  return { success: true };
+}
+
+export async function updateTaskDescription(taskId: string, description: string): Promise<ActionResult> {
+  const trimmed = description.trim();
+  if (trimmed.length > 2000) return { success: false, error: 'Description is too long' };
+
+  try {
+    await prisma.hvacTask.update({ where: { id: taskId }, data: { description: trimmed || null } });
+  } catch {
+    return { success: false, error: 'Failed to update description' };
+  }
+
+  revalidatePath('/works/flowchart');
+  revalidatePath(`/tasks/${taskId}`);
+  return { success: true };
+}
+
+// taskTypeId is set here WITHOUT recomputing dueDate — the flowchart's edit
+// dialog already computes the suggested due date client-side (via
+// computeDueDate, same helper the Create Task form uses) and saves it
+// through updateTaskPlannedDates itself, so this only ever needs to persist
+// which type was picked, not re-derive dates from it.
+export async function updateTaskType(taskId: string, taskTypeId: string | null): Promise<ActionResult> {
+  try {
+    await prisma.hvacTask.update({ where: { id: taskId }, data: { taskTypeId: taskTypeId || null } });
+  } catch {
+    return { success: false, error: 'Failed to update task type' };
+  }
+
+  revalidatePath('/works/flowchart');
+  revalidatePath(`/tasks/${taskId}`);
   return { success: true };
 }
 
@@ -480,7 +512,7 @@ export async function deleteHvacTask(taskId: string): Promise<ActionResult> {
     return { success: false, error: 'Failed to delete task' };
   }
 
-  revalidatePath('/hvac');
+  revalidatePath('/tasks');
   revalidatePath('/works');
   revalidatePath('/works/flowchart');
   return { success: true };

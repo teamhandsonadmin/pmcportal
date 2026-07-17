@@ -18,7 +18,7 @@ export function TaskCard({ task, overallPct, assigneeName }: { task: TaskCardDat
 
   return (
     <Link
-      href={`/hvac/${task.id}`}
+      href={`/tasks/${task.id}`}
       className="group flex items-center gap-4 px-4 py-4 bg-card border-b border-border hover:bg-gray-50 transition-colors last:border-b-0"
     >
       {/* Task ID */}

@@ -1,10 +1,18 @@
 'use client';
 
 import { useState, useTransition, useMemo } from 'react';
-import { createUser, updateUserRole, updateUserStatus, deleteUser } from '@/app/actions/users';
+import { Users, UserCheck, HardHat, Wrench, Mail, UserPlus, Settings } from 'lucide-react';
+import { createUser, updateUserRole, updateUserStatus, deleteUser, resetDeviceLock, forceLogoutUser, blockUser, unblockUser } from '@/app/actions/users';
+import { BlockedLoginAttempts, type BlockedAttemptRow } from './BlockedLoginAttempts';
 
 /* ── Types ───────────────────────────────────────────────── */
-type Role   = 'admin' | 'senior_site_engineer' | 'site_engineer';
+// Matches Prisma's UserRole enum exactly (admin/senior_site_engineer/
+// site_engineer/client) — this page queries EVERY UserProfile row with no
+// role filter, so it must be able to render a client account too, not just
+// the three staff roles it was originally built around. Omitting 'client'
+// here previously crashed the page outright the moment any client account
+// existed (ROLE_CFG[role] came back undefined for 'client').
+type Role   = 'admin' | 'senior_site_engineer' | 'site_engineer' | 'client';
 type Status = 'active' | 'invited' | 'disabled';
 
 export interface UserRow {
@@ -18,6 +26,8 @@ export interface UserRow {
   lastLogin: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  lockedDeviceId: string | null;
+  lockedDeviceRegisteredAt: Date | null;
 }
 
 /* ── Config ──────────────────────────────────────────────── */
@@ -25,6 +35,7 @@ const ROLE_CFG: Record<Role, { label: string; bg: string; color: string; avatarB
   admin:                { label: 'Admin',                bg: '#111111', color: '#ffffff', avatarBg: '#111111' },
   senior_site_engineer: { label: 'Sr. Site Engineer',   bg: '#eef2ff', color: '#4338ca', avatarBg: '#6366f1' },
   site_engineer:        { label: 'Site Engineer',        bg: '#f9fafb', color: '#374151', avatarBg: '#6b7280' },
+  client:               { label: 'Client',               bg: '#fdf4ff', color: '#a21caf', avatarBg: '#c026d3' },
 };
 const STATUS_CFG: Record<Status, { label: string; bg: string; color: string; dot: string }> = {
   active:   { label: 'Active',   bg: '#f0fdf4', color: '#15803d', dot: '#22c55e' },
@@ -88,7 +99,7 @@ function ActionMenu({ user, onView, onEdit, onChangeRole, onToggleStatus, onDele
   user: UserRow;
   onView: () => void;
   onEdit: () => void;
-  onChangeRole: (role: Role) => void;
+  onChangeRole: (role: 'admin' | 'senior_site_engineer' | 'site_engineer') => void;
   onToggleStatus: () => void;
   onDelete: () => void;
 }) {
@@ -118,7 +129,7 @@ function ActionMenu({ user, onView, onEdit, onChangeRole, onToggleStatus, onDele
           <div className="my-1 h-px bg-gray-100" />
           <div className="px-3 py-1.5">
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Change Role</p>
-            {(['admin', 'senior_site_engineer', 'site_engineer'] as Role[])
+            {(['admin', 'senior_site_engineer', 'site_engineer'] as const)
               .filter((r) => r !== user.role)
               .map((r) => (
                 <button key={r} onClick={() => { onChangeRole(r); setOpen(false); }}
@@ -172,6 +183,8 @@ function AddUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
           lastLogin: null,
           createdAt: new Date(),
           updatedAt: new Date(),
+          lockedDeviceId: null,
+          lockedDeviceRegisteredAt: null,
         };
         onCreated(newUser);
         onClose();
@@ -189,7 +202,7 @@ function AddUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
           <div>
             <h2 className="text-[16px] font-bold text-gray-900">Add New User</h2>
-            <p className="text-[12.5px] text-gray-500 mt-0.5">Invite someone to the system. They'll be marked as Invited.</p>
+            <p className="text-[12.5px] text-gray-500 mt-0.5">Invite someone to the system. They&apos;ll be marked as Invited.</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -284,7 +297,23 @@ function ConfirmDialog({ title, description, confirmLabel, variant, onConfirm, o
 }
 
 /* ── User Details Drawer ─────────────────────────────────── */
-function UserDrawer({ user, onClose, onEdit }: { user: UserRow; onClose: () => void; onEdit: () => void }) {
+function UserDrawer({
+  user,
+  onClose,
+  onEdit,
+  onResetDeviceLock,
+  onForceLogout,
+  onBlock,
+  onUnblock,
+}: {
+  user: UserRow;
+  onClose: () => void;
+  onEdit: () => void;
+  onResetDeviceLock: () => void;
+  onForceLogout: () => void;
+  onBlock: () => void;
+  onUnblock: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
       <div className="flex-1" />
@@ -325,7 +354,6 @@ function UserDrawer({ user, onClose, onEdit }: { user: UserRow; onClose: () => v
                 { label: 'Email',        value: user.email },
                 { label: 'Phone',        value: user.phone ?? '—' },
                 { label: 'Created',      value: fmtDate(user.createdAt) },
-                { label: 'Last Login',   value: fmtRelative(user.lastLogin) },
                 { label: 'Last Updated', value: fmtDate(user.updatedAt) },
               ].map((item) => (
                 <div key={item.label} className="flex items-start justify-between gap-3">
@@ -338,17 +366,92 @@ function UserDrawer({ user, onClose, onEdit }: { user: UserRow; onClose: () => v
 
           <div className="h-px bg-gray-100" />
 
+          {/* Mobile login + device lock + session control, all in one
+              place — these are all facets of the same underlying concern
+              (is this account currently usable on a phone, and from
+              which one), not separate topics. Reads live on every normal
+              page load/revalidation (see access/page.tsx) — no client-side
+              polling needed since a fresh mobile login just updates the
+              row this page already queries server-side. */}
+          <div>
+            <h4 className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400 mb-4">Mobile Login &amp; Device</h4>
+            {user.lastLogin || user.lockedDeviceId ? (
+              <div className="bg-gray-50 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
+                  <span className="text-[12.5px] font-semibold text-gray-800">
+                    Last active {fmtRelative(user.lastLogin)}
+                  </span>
+                </div>
+                {user.lockedDeviceId ? (
+                  <>
+                    <p className="text-[11.5px] text-gray-500 mb-1">
+                      Device registered {user.lockedDeviceRegisteredAt ? fmtDate(user.lockedDeviceRegisteredAt) : '—'}
+                    </p>
+                    <p className="text-[11px] text-gray-400 font-mono mb-3">
+                      Device ending in …{user.lockedDeviceId.slice(-8)}
+                    </p>
+                    <button
+                      onClick={onResetDeviceLock}
+                      className="w-full h-9 border border-gray-200 text-gray-700 text-[12.5px] font-medium rounded-lg hover:bg-white transition-colors"
+                    >
+                      Reset Device Lock
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-[11.5px] text-gray-500 mb-1">No device currently locked.</p>
+                )}
+              </div>
+            ) : (
+              <div className="bg-gray-50 rounded-xl p-4">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
+                  <span className="text-[12.5px] text-gray-500">Never logged in on mobile yet.</span>
+                </div>
+              </div>
+            )}
+            {/* Right next to each other on purpose — a stolen phone needs
+                both a session-ending action AND (separately, via the
+                reset button above) a device-lock reset; someone just
+                switching phones legitimately needs only the reset. */}
+            <div className="flex gap-2 mt-2.5">
+              <button
+                onClick={onForceLogout}
+                className="flex-1 h-9 bg-red-600 hover:bg-red-700 text-white text-[12.5px] font-medium rounded-lg transition-colors"
+              >
+                Force Logout
+              </button>
+              {user.status === 'disabled' ? (
+                <button
+                  onClick={onUnblock}
+                  className="flex-1 h-9 bg-green-600 hover:bg-green-700 text-white text-[12.5px] font-medium rounded-lg transition-colors"
+                >
+                  Unblock
+                </button>
+              ) : (
+                <button
+                  onClick={onBlock}
+                  className="flex-1 h-9 border border-red-200 text-red-600 hover:bg-red-50 text-[12.5px] font-medium rounded-lg transition-colors"
+                >
+                  Block
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="h-px bg-gray-100" />
+
           {/* Activity placeholder */}
           <div>
             <h4 className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400 mb-4">Recent Activity</h4>
             <div className="space-y-3">
               {[
-                { icon: '🔐', text: 'Account created',        time: fmtDate(user.createdAt) },
-                { icon: '📧', text: 'Invitation sent',         time: fmtDate(user.createdAt) },
-                { icon: '⚙️', text: `Role set to ${ROLE_CFG[user.role].label}`, time: fmtDate(user.createdAt) },
+                { Icon: UserPlus, text: 'Account created',        time: fmtDate(user.createdAt) },
+                { Icon: Mail,     text: 'Invitation sent',         time: fmtDate(user.createdAt) },
+                { Icon: Settings, text: `Role set to ${ROLE_CFG[user.role].label}`, time: fmtDate(user.createdAt) },
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <span className="text-base leading-none mt-0.5 flex-shrink-0">{item.icon}</span>
+                  <item.Icon className="size-4 mt-0.5 flex-shrink-0 text-gray-400" />
                   <div>
                     <p className="text-[12.5px] text-gray-700">{item.text}</p>
                     <p className="text-[11px] text-gray-400">{item.time}</p>
@@ -398,11 +501,12 @@ function UserDrawer({ user, onClose, onEdit }: { user: UserRow; onClose: () => v
 /* ── Main Component ──────────────────────────────────────── */
 interface Props {
   initialUsers: UserRow[];
+  blockedAttempts: BlockedAttemptRow[];
 }
 
-type Confirm = { type: 'delete' | 'disable' | 'enable'; user: UserRow } | null;
+type Confirm = { type: 'delete' | 'disable' | 'enable' | 'reset-device' | 'force-logout' | 'block' | 'unblock'; user: UserRow } | null;
 
-export function AccessManagement({ initialUsers }: Props) {
+export function AccessManagement({ initialUsers, blockedAttempts }: Props) {
   const [users, setUsers]           = useState<UserRow[]>(initialUsers);
   const [search, setSearch]         = useState('');
   const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all');
@@ -410,7 +514,13 @@ export function AccessManagement({ initialUsers }: Props) {
   const [addOpen, setAddOpen]       = useState(false);
   const [drawer, setDrawer]         = useState<UserRow | null>(null);
   const [confirm, setConfirm]       = useState<Confirm>(null);
+  const [toast, setToast]           = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  function showToast(message: string) {
+    setToast(message);
+    setTimeout(() => setToast(null), 4000);
+  }
 
   const filtered = useMemo(() => {
     return users.filter((u) => {
@@ -431,7 +541,7 @@ export function AccessManagement({ initialUsers }: Props) {
     invited: users.filter((u) => u.status === 'invited').length,
   };
 
-  function handleRoleChange(userId: string, role: Role) {
+  function handleRoleChange(userId: string, role: 'admin' | 'senior_site_engineer' | 'site_engineer') {
     startTransition(async () => {
       await updateUserRole(userId, role);
       setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role } : u));
@@ -454,6 +564,46 @@ export function AccessManagement({ initialUsers }: Props) {
         setUsers((prev) => prev.filter((u) => u.id !== confirm.user.id));
         if (drawer?.id === confirm.user.id) setDrawer(null);
       });
+    } else if (confirm.type === 'reset-device') {
+      startTransition(async () => {
+        await resetDeviceLock(confirm.user.id);
+        setUsers((prev) => prev.map((u) => u.id === confirm.user.id ? { ...u, lockedDeviceId: null, lockedDeviceRegisteredAt: null } : u));
+        setDrawer((prev) => prev && prev.id === confirm.user.id ? { ...prev, lockedDeviceId: null, lockedDeviceRegisteredAt: null } : prev);
+      });
+    } else if (confirm.type === 'force-logout') {
+      const targetName = confirm.user.fullName;
+      startTransition(async () => {
+        const res = await forceLogoutUser(confirm.user.id);
+        if (res.success) {
+          showToast(`${targetName}'s session has been ended. They'll be signed out on their device shortly.`);
+        } else {
+          showToast(`Could not force logout ${targetName} — try again.`);
+        }
+      });
+    } else if (confirm.type === 'block') {
+      const targetName = confirm.user.fullName;
+      startTransition(async () => {
+        const res = await blockUser(confirm.user.id);
+        if (res.success) {
+          setUsers((prev) => prev.map((u) => u.id === confirm.user.id ? { ...u, status: 'disabled', isActive: false } : u));
+          setDrawer((prev) => prev && prev.id === confirm.user.id ? { ...prev, status: 'disabled', isActive: false } : prev);
+          showToast(`${targetName} has been blocked and signed out.`);
+        } else {
+          showToast(`Could not block ${targetName} — try again.`);
+        }
+      });
+    } else if (confirm.type === 'unblock') {
+      const targetName = confirm.user.fullName;
+      startTransition(async () => {
+        const res = await unblockUser(confirm.user.id);
+        if (res.success) {
+          setUsers((prev) => prev.map((u) => u.id === confirm.user.id ? { ...u, status: 'active', isActive: true } : u));
+          setDrawer((prev) => prev && prev.id === confirm.user.id ? { ...prev, status: 'active', isActive: true } : prev);
+          showToast(`${targetName} has been unblocked.`);
+        } else {
+          showToast(`Could not unblock ${targetName} — try again.`);
+        }
+      });
     } else {
       const newStatus: Status = confirm.type === 'enable' ? 'active' : 'disabled';
       startTransition(async () => {
@@ -465,11 +615,11 @@ export function AccessManagement({ initialUsers }: Props) {
   }
 
   const STAT_CARDS = [
-    { label: 'Total Users',         value: stats.total,   icon: '👥', color: '#111111' },
-    { label: 'Active Users',         value: stats.active,  icon: '✅', color: '#16a34a' },
-    { label: 'Sr. Site Engineers',   value: stats.senior,  icon: '🏗️', color: '#6366f1' },
-    { label: 'Site Engineers',       value: stats.site,    icon: '🔧', color: '#6b7280' },
-    { label: 'Pending Invites',      value: stats.invited, icon: '📨', color: '#d97706' },
+    { label: 'Total Users',         value: stats.total,   Icon: Users,     color: '#111111' },
+    { label: 'Active Users',         value: stats.active,  Icon: UserCheck, color: '#16a34a' },
+    { label: 'Sr. Site Engineers',   value: stats.senior,  Icon: HardHat,   color: '#6366f1' },
+    { label: 'Site Engineers',       value: stats.site,    Icon: Wrench,    color: '#6b7280' },
+    { label: 'Pending Invites',      value: stats.invited, Icon: Mail,      color: '#d97706' },
   ];
 
   return (
@@ -495,7 +645,7 @@ export function AccessManagement({ initialUsers }: Props) {
         {STAT_CARDS.map((card) => (
           <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xl">{card.icon}</span>
+              <card.Icon className="size-5" style={{ color: card.color }} />
             </div>
             <div className="text-[30px] font-bold leading-none" style={{ color: card.color }}>{card.value}</div>
             <div className="text-[11.5px] text-gray-500 mt-1.5">{card.label}</div>
@@ -533,6 +683,7 @@ export function AccessManagement({ initialUsers }: Props) {
               <option value="admin">Admin</option>
               <option value="senior_site_engineer">Sr. Site Engineer</option>
               <option value="site_engineer">Site Engineer</option>
+              <option value="client">Client</option>
             </select>
             <select
               value={statusFilter}
@@ -647,6 +798,9 @@ export function AccessManagement({ initialUsers }: Props) {
         )}
       </div>
 
+      {/* ── Blocked login attempts (single-device lock) ───── */}
+      <BlockedLoginAttempts attempts={blockedAttempts} />
+
       {/* ── Modals / Drawers / Dialogs ────────────────────── */}
       {addOpen && (
         <AddUserModal
@@ -660,23 +814,49 @@ export function AccessManagement({ initialUsers }: Props) {
           user={drawer}
           onClose={() => setDrawer(null)}
           onEdit={() => setDrawer(drawer)}
+          onResetDeviceLock={() => setConfirm({ type: 'reset-device', user: drawer })}
+          onForceLogout={() => setConfirm({ type: 'force-logout', user: drawer })}
+          onBlock={() => setConfirm({ type: 'block', user: drawer })}
+          onUnblock={() => setConfirm({ type: 'unblock', user: drawer })}
         />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm bg-gray-900 text-white text-[13px] rounded-xl px-4 py-3 shadow-2xl">
+          {toast}
+        </div>
       )}
 
       {confirm && (
         <ConfirmDialog
           title={
-            confirm.type === 'delete'  ? `Delete ${confirm.user.fullName}?` :
-            confirm.type === 'disable' ? `Disable ${confirm.user.fullName}?` :
+            confirm.type === 'delete'       ? `Delete ${confirm.user.fullName}?` :
+            confirm.type === 'disable'      ? `Disable ${confirm.user.fullName}?` :
+            confirm.type === 'reset-device' ? `Reset device lock for ${confirm.user.fullName}?` :
+            confirm.type === 'force-logout' ? `Force logout ${confirm.user.fullName}?` :
+            confirm.type === 'block'        ? `Block ${confirm.user.fullName}?` :
+            confirm.type === 'unblock'      ? `Unblock ${confirm.user.fullName}?` :
             `Enable ${confirm.user.fullName}?`
           }
           description={
-            confirm.type === 'delete'  ? 'This will permanently remove the user and cannot be undone.' :
-            confirm.type === 'disable' ? 'This user will lose access to the system immediately.' :
+            confirm.type === 'delete'       ? 'This will permanently remove the user and cannot be undone.' :
+            confirm.type === 'disable'      ? 'This user will lose access to the system immediately.' :
+            confirm.type === 'reset-device' ? "This clears the mobile app's device lock for this account — their next login, from any device, establishes a fresh lock to that device." :
+            confirm.type === 'force-logout' ? "This immediately ends this user's active mobile session and revokes their ability to silently re-authenticate. It does NOT reset their device lock — they (or whoever holds their phone) still can't log in from a different device without a separate reset." :
+            confirm.type === 'block'        ? "This ends their current mobile session right now AND blocks every future login attempt with a clear message, until they're unblocked. Their device lock is left untouched." :
+            confirm.type === 'unblock'      ? 'This restores normal login ability. It does not change which device their account is locked to — use Reset Device Lock separately if that also needs clearing.' :
             'This user will regain access to the system.'
           }
-          confirmLabel={confirm.type === 'delete' ? 'Delete User' : confirm.type === 'disable' ? 'Disable Access' : 'Enable Access'}
-          variant={confirm.type === 'delete' ? 'danger' : 'warning'}
+          confirmLabel={
+            confirm.type === 'delete'       ? 'Delete User' :
+            confirm.type === 'disable'      ? 'Disable Access' :
+            confirm.type === 'reset-device' ? 'Reset Device Lock' :
+            confirm.type === 'force-logout' ? 'Force Logout' :
+            confirm.type === 'block'        ? 'Block User' :
+            confirm.type === 'unblock'      ? 'Unblock User' :
+            'Enable Access'
+          }
+          variant={confirm.type === 'delete' || confirm.type === 'force-logout' || confirm.type === 'block' ? 'danger' : 'warning'}
           onConfirm={executeConfirm}
           onCancel={() => setConfirm(null)}
         />

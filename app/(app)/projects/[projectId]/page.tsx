@@ -199,6 +199,13 @@ export default async function ProjectDashboardPage({
         </div>
         <div className="flex items-center gap-2">
           <Link
+            href={`/projects/${project.id}/report`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 text-gray-700 text-[12px] font-medium hover:bg-gray-50 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>
+            Client Report
+          </Link>
+          <Link
             href={`/projects/${project.id}/settings`}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 text-gray-700 text-[12px] font-medium hover:bg-gray-50 transition-colors"
           >

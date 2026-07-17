@@ -11,6 +11,14 @@ export type TaskStatus =
 // existed in this app; every existing TaskDependency row defaults to it.
 export type DependencyType = 'FS' | 'SS' | 'FF' | 'SF';
 
+// 'inspector' (displayed as "Vendor" in some UIs) was retired as a checklist
+// category — its one surviving item, Material Samples, moved under
+// 'procurement', and no DependencyItem/DependencyTemplateItem row references
+// it anymore. It stays in this union (and every Record<DependencyCategory,
+// ...> below) because it's still a live value in the Prisma-generated enum —
+// recreating that Postgres enum type to drop it is a riskier migration than
+// just never surfacing it. Every CATEGORIES list/iteration array across the
+// app (the thing that actually controls what renders) omits it instead.
 export type DependencyCategory =
   | 'architect'
   | 'client'
@@ -92,6 +100,10 @@ export interface DependencyItem {
   sortOrder: number;
   createdAt: Date;
   completion?: DependencyCompletion | null;
+  // Real threaded comment count (see the Comment model) — optional since not
+  // every consumer of this type fetches it; the checklist UIs do, to badge
+  // the comment icon.
+  commentCount?: number;
 }
 
 export interface CategoryProgress {

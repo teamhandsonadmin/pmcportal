@@ -161,7 +161,7 @@ export default async function DashboardPage() {
         <div className="rounded-2xl bg-white border border-gray-100 p-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
           <div className="flex items-center justify-between mb-3">
             <p className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wider">Dependency Health</p>
-            <Link href="/hvac" className="text-[11px] font-semibold text-gray-400 hover:text-gray-900 transition-colors">Manage →</Link>
+            <Link href="/tasks" className="text-[11px] font-semibold text-gray-400 hover:text-gray-900 transition-colors">Manage →</Link>
           </div>
           <span className="text-[30px] font-black text-gray-900 leading-none tabular-nums">{depCompletionPct}%</span>
           <p className="text-[11.5px] text-gray-400 mt-2">

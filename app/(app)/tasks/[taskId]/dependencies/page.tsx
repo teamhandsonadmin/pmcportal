@@ -4,7 +4,7 @@ import { DependencyChecklist } from '@/components/hvac/DependencyChecklist';
 import { isLocked } from '@/lib/utils/status-rules';
 import type { DependencyCategory, DependencyItem } from '@/lib/types/hvac';
 
-const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'];
+const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'procurement'];
 
 interface Props {
   params: Promise<{ taskId: string }>;
@@ -19,7 +19,7 @@ export default async function TaskDependenciesPage({ params }: Props) {
     prisma.hvacTask.findUnique({ where: { id: taskId }, select: { status: true } }),
     prisma.dependencyItem.findMany({
       where: { taskId },
-      include: { completion: true },
+      include: { completion: true, _count: { select: { comments: true } } },
       orderBy: { sortOrder: 'asc' },
     }),
   ]);
@@ -34,6 +34,7 @@ export default async function TaskDependenciesPage({ params }: Props) {
     isMandatory: item.isMandatory,
     sortOrder: item.sortOrder,
     createdAt: item.createdAt,
+    commentCount: item._count.comments,
     completion: item.completion
       ? {
           id: item.completion.id,

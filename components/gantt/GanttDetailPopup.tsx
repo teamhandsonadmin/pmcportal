@@ -24,13 +24,19 @@ export function GanttDetailPopup({ row, onClose }: GanttDetailPopupProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!row) return;
     // This resets local state ahead of an async fetch keyed on `row` — there's
     // no render-time value to derive it from instead, since whether the fetch
-    // is even needed depends on `row` itself changing.
+    // is even needed depends on `row` itself changing. Clearing `impact` on
+    // `row === null` (not just skipping the fetch) matters even though the
+    // Dialog's `open` prop is already false at that point — Base UI keeps the
+    // content mounted through the close animation, so the `{impact && ...}`
+    // block below would otherwise still render with a real, non-null
+    // `impact` left over from the previous row while `row` itself is null,
+    // crashing on that block's `row!.id` non-null assertions.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setImpact(null);
     setError(null);
+    if (!row) { setLoading(false); return; }
     setLoading(true);
     fetchTaskScheduleImpact(row.id)
       .then((result) => {
@@ -99,7 +105,7 @@ export function GanttDetailPopup({ row, onClose }: GanttDetailPopupProps) {
               <p className="text-[12px] text-muted-foreground">
                 Delayed by{' '}
                 <Link
-                  href={`/hvac/${impact.drivingPrerequisite.id}/overview`}
+                  href={`/tasks/${impact.drivingPrerequisite.id}/overview`}
                   className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
                 >
                   {impact.drivingPrerequisite.taskCode} — {impact.drivingPrerequisite.taskName}
@@ -115,7 +121,7 @@ export function GanttDetailPopup({ row, onClose }: GanttDetailPopupProps) {
                 <ul className="space-y-1">
                   {impact.downstreamImpacted.map((d) => (
                     <li key={d.id} className="text-[12px] flex items-center justify-between gap-2">
-                      <Link href={`/hvac/${d.id}/overview`} className="text-foreground hover:underline underline-offset-2 truncate">
+                      <Link href={`/tasks/${d.id}/overview`} className="text-foreground hover:underline underline-offset-2 truncate">
                         {d.taskCode} — {d.taskName}
                       </Link>
                       <span className="text-muted-foreground flex-shrink-0">{d.totalDelayDays}d</span>
@@ -126,7 +132,7 @@ export function GanttDetailPopup({ row, onClose }: GanttDetailPopupProps) {
             )}
 
             <Link
-              href={`/hvac/${row!.id}/overview`}
+              href={`/tasks/${row!.id}/overview`}
               className="inline-flex items-center gap-1 text-[12.5px] font-medium text-foreground underline underline-offset-2 hover:no-underline"
             >
               View full task →

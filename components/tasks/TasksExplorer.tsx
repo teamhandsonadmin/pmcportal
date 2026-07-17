@@ -9,13 +9,15 @@ import { TaskDependencyGraph, type GraphEdgeInput } from '@/components/tasks/Tas
 import { BulkDeleteDialog } from '@/components/tasks/BulkDeleteDialog';
 import type { TaskTypeOption } from '@/components/hvac/TaskTypeManager';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus, DependencyCategory, CompletionStatus } from '@/lib/types/hvac';
 
 export interface TaskRow {
   id: string;
   taskId: string;
   taskName: string;
   projectName: string;
+  description: string | null;
+  taskTypeId: string | null;
   status: TaskStatus;
   plannedStartDate: Date | null;
   dueDate: Date | null;
@@ -29,6 +31,11 @@ export interface TaskRow {
   workColor: string;
   manualPositionX: number | null;
   manualPositionY: number | null;
+  // Full per-item checklist breakdown (every category/item, not just the
+  // aggregate progressPct above) — powers the Gantt chart's checklist-health
+  // indicator + hover tooltip (see lib/utils/checklist-health.ts).
+  checklistItems: { category: DependencyCategory; itemLabel: string; status: CompletionStatus }[];
+  worstChecklistStatus: CompletionStatus | null;
   prerequisiteCount: number;
   prerequisiteCompletedCount: number;
 }
@@ -156,6 +163,8 @@ export function TasksExplorer({
         id: r.id,
         taskId: r.taskId,
         taskName: r.taskName,
+        description: r.description,
+        taskTypeId: r.taskTypeId,
         status: r.status,
         workId: r.workId,
         workCode: r.workCode,

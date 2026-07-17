@@ -121,13 +121,13 @@ const SECTIONS = [
         children: [
           { label: 'Flowchart', href: '/works/flowchart' },
           { label: 'Gantt Chart', href: '/gantt' },
+          { label: 'Comments', href: '/works/comments' },
         ],
       },
       { label: 'Inventory',               href: '/inventory',   icon: Icons.Inventory,     exact: false, badge: 0, disabled: true },
-      { label: 'Dependencies',            href: '/hvac',        icon: Icons.Dependencies,  exact: false, badge: 0, disabled: true },
-      { label: 'Schedule & Calendar',     href: '/calendar',    icon: Icons.Calendar,      exact: false, badge: 0 },
+      { label: 'Dependencies',            href: '/tasks',        icon: Icons.Dependencies,  exact: false, badge: 0, disabled: true },
+      { label: 'Schedule & Calendar',     href: '/calendar',    icon: Icons.Calendar,      exact: false, badge: 0, disabled: true },
       { label: 'Attendance',              href: '/attendance',  icon: Icons.Attendance,    exact: false, badge: 0, disabled: true },
-      { label: 'Daily Progress Reports',  href: '/dpr',         icon: Icons.DPR,           exact: false, badge: 0 },
       { label: 'Site Photos',             href: '/photos',      icon: Icons.Photos,        exact: false, badge: 0, disabled: true },
       { label: 'Documents',               href: '/documents',   icon: Icons.Documents,     exact: false, badge: 0, disabled: true },
     ],
@@ -135,8 +135,8 @@ const SECTIONS = [
   {
     label: 'Management',
     items: [
-      { label: 'Access & Roles',   href: '/access',         icon: Icons.Access,      exact: false, badge: 0, disabled: true },
-      { label: 'Reports',          href: '/reports',        icon: Icons.Reports,     exact: false, badge: 0, disabled: true },
+      { label: 'Access & Roles',   href: '/access',         icon: Icons.Access,      exact: false, badge: 0 },
+      { label: 'Reports',          href: '/reports',        icon: Icons.Reports,     exact: false, badge: 0 },
       { label: 'Project Health',   href: '/project-health', icon: Icons.Health,      exact: true,  badge: 0, disabled: true },
       { label: 'Score Cards',      href: '/scorecards',     icon: Icons.Scorecards,  exact: false, badge: 0, disabled: true },
     ],

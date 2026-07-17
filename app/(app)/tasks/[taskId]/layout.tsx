@@ -14,7 +14,7 @@ export default async function TaskLayout({ children, params }: TaskLayoutProps) 
 
   const task = await prisma.hvacTask.findUnique({
     where: { id: taskId },
-    select: { taskId: true, taskName: true, projectName: true, status: true, dueDate: true },
+    select: { taskId: true, taskName: true, projectName: true, status: true, plannedStartDate: true, dueDate: true },
   }).catch(() => null);
 
   if (!task) notFound();
@@ -41,10 +41,20 @@ export default async function TaskLayout({ children, params }: TaskLayoutProps) 
             <h1 className="text-xl font-bold tracking-tight">{task.taskName}</h1>
             <p className="text-sm text-muted-foreground mt-0.5">{task.projectName}</p>
           </div>
-          {task.dueDate && (
-            <div className="text-right flex-shrink-0 bg-card border border-border rounded-lg px-4 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Due Date</p>
-              <p className="text-sm font-mono font-semibold mt-0.5">{formatDate(task.dueDate)}</p>
+          {(task.plannedStartDate || task.dueDate) && (
+            <div className="flex items-stretch gap-2 flex-shrink-0">
+              {task.plannedStartDate && (
+                <div className="text-right bg-card border border-border rounded-lg px-4 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Start Date</p>
+                  <p className="text-sm font-mono font-semibold mt-0.5">{formatDate(task.plannedStartDate)}</p>
+                </div>
+              )}
+              {task.dueDate && (
+                <div className="text-right bg-card border border-border rounded-lg px-4 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Due Date</p>
+                  <p className="text-sm font-mono font-semibold mt-0.5">{formatDate(task.dueDate)}</p>
+                </div>
+              )}
             </div>
           )}
         </div>

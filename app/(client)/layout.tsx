@@ -9,8 +9,12 @@ export default async function ClientLayout({ children }: { children: React.React
 
   const project = await prisma.project.findUnique({
     where: { id: profile.clientProjectId },
-    select: { name: true },
+    select: { name: true, reportSentAt: true },
   });
 
-  return <ClientLayoutShell projectName={project?.name ?? 'Your Project'}>{children}</ClientLayoutShell>;
+  return (
+    <ClientLayoutShell projectName={project?.name ?? 'Your Project'} hasReport={!!project?.reportSentAt}>
+      {children}
+    </ClientLayoutShell>
+  );
 }

@@ -89,7 +89,7 @@ export default async function WorkTaskListPage({ params }: Props) {
 
   function taskProgress(taskId: string): CategoryProgress[] {
     const taskItems = depItems.filter((i) => i.taskId === taskId);
-    const categories = ['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'] as const;
+    const categories = ['architect', 'client', 'consultant', 'contractor', 'procurement'] as const;
     return categories.map((cat) => {
       const catItems = taskItems.filter((i) => i.category === cat);
       const completed = catItems.filter((i) => isItemDone(i.completion?.status as never)).length;

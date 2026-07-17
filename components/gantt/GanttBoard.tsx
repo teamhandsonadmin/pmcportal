@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { GanttWorkLeftPanel, GanttWorkTimelinePanel } from '@/components/gantt/GanttWorkSection';
 import { GanttTimelineHeader } from '@/components/gantt/GanttTimelineHeader';
 import { GanttDetailPopup } from '@/components/gantt/GanttDetailPopup';
@@ -98,6 +99,7 @@ export function GanttBoard({ rows, delayById, groundedIds }: GanttBoardProps) {
   }
 
   return (
+    <TooltipProvider>
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5 flex-wrap">
@@ -215,5 +217,6 @@ export function GanttBoard({ rows, delayById, groundedIds }: GanttBoardProps) {
 
       <GanttDetailPopup row={detailRow} onClose={() => setDetailRow(null)} />
     </div>
+    </TooltipProvider>
   );
 }

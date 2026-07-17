@@ -9,7 +9,8 @@ import {
 } from '@/app/actions/dependencies';
 import type { DependencyCategory, DependencyItem, CompletionStatus } from '@/lib/types/hvac';
 import { CATEGORY_COLORS, isItemDone } from '@/lib/types/hvac';
-import { NOTE_PROMPT_STATUSES, StatusDropdown } from './StatusDropdown';
+import { StatusDropdown } from './StatusDropdown';
+import { CommentThreadModal } from './CommentThreadModal';
 
 /* ── Category config — colored per category so each checklist is easy to
    tell apart at a glance, reusing the same palette as the template editor. */
@@ -38,12 +39,12 @@ function catConfig(category: DependencyCategory) {
 function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskId: string; locked: boolean }) {
   const [isPending, startTransition] = useTransition();
   const [localStatus, setLocalStatus] = useState<CompletionStatus>(item.completion?.status ?? 'PENDING');
-  const [showComment, setShowComment] = useState(false);
-  const [comment, setComment] = useState(item.completion?.comment ?? '');
   const [isEditing, setIsEditing] = useState(false);
   const [labelText, setLabelText] = useState(item.itemLabel);
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
   const cleared = isItemDone(localStatus);
+  const commentCount = item.commentCount ?? 0;
 
   function saveLabel() {
     const trimmed = labelText.trim();
@@ -63,21 +64,14 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
     startTransition(async () => { await deleteDependencyItem(item.id, taskId); });
   }
 
+  // Real threaded comments (Comment model, via CommentThreadModal) replaced
+  // the old inline "+ Comment" textarea this used to nudge open on a
+  // blocking status — that field was a single unstructured string with no
+  // authorship or replies, which is what the new modal exists to fix.
   function changeStatus(next: CompletionStatus) {
     if (locked || isPending) return;
     setLocalStatus(next);
-    // Blocking statuses are exactly where a reason matters later (e.g.
-    // explaining a delay in a client meeting) — nudge for a note here
-    // rather than requiring one, which would slow down routine use.
-    if (NOTE_PROMPT_STATUSES.includes(next)) setShowComment(true);
-    startTransition(async () => { await updateDependencyCompletion(item.id, taskId, next, comment || null); });
-  }
-
-  async function saveNote() {
-    startTransition(async () => {
-      await updateDependencyCompletion(item.id, taskId, localStatus, comment || null);
-      setShowComment(false);
-    });
+    startTransition(async () => { await updateDependencyCompletion(item.id, taskId, next); });
   }
 
   return (
@@ -101,54 +95,46 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
             {item.itemLabel}
           </span>
         )}
-        {item.completion?.comment && !showComment && (
-          <p className="text-[11px] text-gray-400 italic mt-0.5">&ldquo;{item.completion.comment}&rdquo;</p>
-        )}
-        {showComment && (
-          <div className="mt-2 space-y-1.5">
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder={NOTE_PROMPT_STATUSES.includes(localStatus) ? 'Add a note on why (optional but recommended)…' : 'Add a note…'}
-              rows={2}
-              className="w-full text-[12px] border border-gray-200 rounded-md px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-gray-300"
-            />
-            <div className="flex gap-2">
-              <button onClick={saveNote} className="text-[11.5px] font-medium px-3 py-1 bg-gray-900 text-white rounded-md hover:bg-black transition-colors">Save</button>
-              <button onClick={() => setShowComment(false)} className="text-[11.5px] text-gray-500 hover:text-gray-800 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">Cancel</button>
-            </div>
+      </div>
+
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <button
+          onClick={() => setCommentsOpen(true)}
+          title="Comments"
+          className="flex items-center gap-1 h-5 px-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-[10px]"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          </svg>
+          {commentCount > 0 && <span>{commentCount}</span>}
+        </button>
+
+        {!locked && !isEditing && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => setIsEditing(true)}
+              title="Edit item"
+              className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+            <button
+              onClick={remove}
+              title="Delete item"
+              className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
+              </svg>
+            </button>
           </div>
         )}
       </div>
 
-      {!locked && !isEditing && (
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          {!showComment && (
-            <button onClick={() => setShowComment(true)} className="text-[10px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-transparent hover:border-gray-200 transition-all">
-              Note
-            </button>
-          )}
-          <button
-            onClick={() => setIsEditing(true)}
-            title="Edit item"
-            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-          </button>
-          <button
-            onClick={remove}
-            title="Delete item"
-            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
-            </svg>
-          </button>
-        </div>
-      )}
+      <CommentThreadModal dependencyItemId={commentsOpen ? item.id : null} onClose={() => setCommentsOpen(false)} />
     </div>
   );
 }
@@ -181,32 +167,40 @@ function ChecklistCard({ category, items, taskId, locked }: { category: Dependen
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100" style={{ backgroundColor: allDone ? '#f3f4f6' : cfg.bg }}>
-        <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ backgroundColor: cfg.color }}>
-            {cfg.letter}
-          </div>
-          <span className="text-[12.5px] font-bold uppercase tracking-widest" style={{ color: cfg.color }}>
-            {cfg.label}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {allDone && (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-800 text-white">
-              Complete
+    <div className="bg-white rounded-xl border border-gray-200" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      {/* overflow-hidden scoped to just the header+progress-bar strip (not the
+          whole card) — it exists only to clip their square backgrounds into
+          the card's rounded top corners. Scoping it here instead of on the
+          outer card lets the status dropdown below pop up past the card's
+          own bottom edge for the last item(s) in a category, instead of
+          being clipped off. */}
+      <div className="rounded-t-xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100" style={{ backgroundColor: allDone ? '#f3f4f6' : cfg.bg }}>
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ backgroundColor: cfg.color }}>
+              {cfg.letter}
+            </div>
+            <span className="text-[12.5px] font-bold uppercase tracking-widest" style={{ color: cfg.color }}>
+              {cfg.label}
             </span>
-          )}
-          <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.06)', color: cfg.color }}>
-            {done}/{total}
-          </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {allDone && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-800 text-white">
+                Complete
+              </span>
+            )}
+            <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.06)', color: cfg.color }}>
+              {done}/{total}
+            </span>
+          </div>
         </div>
-      </div>
 
-      {/* Progress bar */}
-      <div className="h-0.5 bg-gray-100">
-        <div className="h-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: cfg.color }} />
+        {/* Progress bar */}
+        <div className="h-0.5 bg-gray-100">
+          <div className="h-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: cfg.color }} />
+        </div>
       </div>
 
       {/* Items */}

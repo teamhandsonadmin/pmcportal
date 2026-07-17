@@ -98,6 +98,38 @@ model UserProfile {
   clientProjectId String?  @map("client_project_id") @db.Uuid
   clientProject   Project? @relation(fields: [clientProjectId], references: [id], onDelete: SetNull)
 
+  // Expo push token for the mobile app (site-engineer-app) — written by the
+  // app itself via Supabase (RLS-scoped to the caller's own row, see
+  // supabase/schema.sql), never by admin-web. Nullable: absent means either
+  // never registered or permission was denied: both are valid, silent states,
+  // not errors. Overwritten wholesale on every fresh registration rather than
+  // versioned/multi-device, since one account maps to one phone in practice
+  // today.
+  expoPushToken String? @map("expo_push_token")
+
+  // Single-device login lock for the mobile app — set to the device's
+  // self-generated, reinstall-resetting identifier on that account's first
+  // successful login, and only ever written by the device-locked-login
+  // Edge Function's service-role client (never directly writable via the
+  // app's own anon-key session — no UPDATE grant exists on these two
+  // columns for `authenticated`, unlike expoPushToken above). Null means
+  // "never logged in yet" or "reset by an admin," both valid states in
+  // which the next successful login establishes a fresh lock.
+  lockedDeviceId           String?   @map("locked_device_id")
+  lockedDeviceRegisteredAt DateTime? @map("locked_device_registered_at")
+
+  // Remote force-logout for the mobile app — null means no forced logout is
+  // pending; a timestamp means "any session that started before this
+  // moment must end immediately." Deliberately independent of
+  // lockedDeviceId: this ends an active session, it does not change which
+  // device the account is allowed to log back in from (that's still only
+  // ever changed by the separate device-lock reset action) — a stolen
+  // phone needs both actions, someone legitimately switching phones needs
+  // only the reset.
+  forceLogoutAt DateTime? @map("force_logout_at")
+
+  comments Comment[]
+
   @@map("user_profiles")
 }
 
@@ -118,6 +150,14 @@ model Project {
   // (a per-task target). Used by lib/data/sft.ts's getProjectSftProgress()
   // as the denominator for the project-level "X of Y sqft done" rollup.
   totalSft  Decimal? @map("total_sft") @db.Decimal(10, 2)
+  // Set the moment an admin sends the client progress report (see
+  // app/actions/reports.ts's sendReportToClient) — null means "never sent
+  // yet". Doubles as the client-facing report route's own access gate
+  // (app/(client)/client/report/page.tsx redirects away if this is null)
+  // and as the only real "new report available" signal surfaced to the
+  // client today, since this stack has no outbound email/notification
+  // system yet (see that action's own comment for the full explanation).
+  reportSentAt DateTime? @map("report_sent_at")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   works     Work[]
@@ -308,6 +348,7 @@ model DependencyItem {
 
   task       HvacTask             @relation(fields: [taskId], references: [id], onDelete: Cascade)
   completion DependencyCompletion?
+  comments   Comment[]
 
   @@map("dependency_items")
   @@index([taskId, category])
@@ -317,6 +358,9 @@ model DependencyCompletion {
   id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   itemId      String           @unique @map("item_id") @db.Uuid
   status      CompletionStatus @default(PENDING)
+  // Superseded by the Comment model (threaded, per-item, not per-completion-
+  // snapshot) — kept as-is, no longer written to by updateDependencyCompletion,
+  // since something else may still read it. See Comment for the real thread.
   comment     String?
   completedBy String?          @map("completed_by") @db.Uuid
   completedAt DateTime?        @map("completed_at")
@@ -325,6 +369,30 @@ model DependencyCompletion {
   item DependencyItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@map("dependency_completions")
+}
+
+// A real threaded comment on a checklist item — belongs to the ITEM
+// (persists across status changes), not to one DependencyCompletion
+// snapshot. parentCommentId null = top-level; set = a reply to that comment.
+// Only one level of nesting is rendered by the UI today (replies don't show
+// their own "reply" affordance), but the self-relation itself supports
+// deeper threads if that changes later.
+model Comment {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dependencyItemId String   @map("dependency_item_id") @db.Uuid
+  authorId         String?  @map("author_id") @db.Uuid
+  body             String   @db.Text
+  parentCommentId  String?  @map("parent_comment_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  item    DependencyItem @relation(fields: [dependencyItemId], references: [id], onDelete: Cascade)
+  author  UserProfile?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  parent  Comment?       @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies Comment[]      @relation("CommentReplies")
+
+  @@map("comments")
+  @@index([dependencyItemId])
+  @@index([parentCommentId])
 }
 
 model ActivityLog {

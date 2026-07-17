@@ -41,7 +41,7 @@ export default async function TaskOverviewPage({ params }: Props) {
 
   const locked = isLocked(task.status);
 
-  const categories = ['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'] as const;
+  const categories = ['architect', 'client', 'consultant', 'contractor', 'procurement'] as const;
   const progress: CategoryProgress[] = categories.map((cat) => {
     const items = depItems.filter((i) => i.category === cat);
     const completed = items.filter((i) => isItemDone(i.completion?.status as never)).length;

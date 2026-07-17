@@ -44,7 +44,7 @@ export function TaskFlowMap({ tasks }: TaskFlowMapProps) {
             <div key={task.id} className="flex items-center">
               {/* Task card */}
               <Link
-                href={`/hvac/${task.id}`}
+                href={`/tasks/${task.id}`}
                 className="group relative flex flex-col gap-2 w-44 rounded-lg border-2 p-3 transition-all hover:shadow-md hover:-translate-y-0.5"
                 style={{
                   borderColor: cfg.border,
@@ -141,7 +141,7 @@ export function TaskFlowMap({ tasks }: TaskFlowMapProps) {
             </div>
           )}
           <Link
-            href="/hvac/new"
+            href="/tasks/new"
             className="flex flex-col items-center justify-center gap-1 w-44 h-[118px] rounded-lg border-2 border-dashed border-border hover:border-primary/40 hover:bg-primary/5 transition-all group"
           >
             <div className="w-8 h-8 rounded-full bg-muted group-hover:bg-primary/10 flex items-center justify-center transition-colors">

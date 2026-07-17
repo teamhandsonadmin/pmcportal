@@ -8,10 +8,10 @@ import type { ActionResult } from '@/lib/types/hvac';
 // the delay engine, or any other gating logic anywhere in the app. See
 // prisma/schema.prisma's TaskParallelLink comment for why.
 async function revalidateTaskFamily(taskAId: string, taskBId: string) {
-  revalidatePath(`/hvac/${taskAId}`);
-  revalidatePath(`/hvac/${taskAId}/overview`);
-  revalidatePath(`/hvac/${taskBId}`);
-  revalidatePath(`/hvac/${taskBId}/overview`);
+  revalidatePath(`/tasks/${taskAId}`);
+  revalidatePath(`/tasks/${taskAId}/overview`);
+  revalidatePath(`/tasks/${taskBId}`);
+  revalidatePath(`/tasks/${taskBId}/overview`);
   revalidatePath('/works');
   revalidatePath('/works/flowchart');
 }

@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
 import { updateDependencyCompletion } from '@/app/actions/dependencies';
 import { formatDate } from '@/lib/utils/format';
 import { isItemDone } from '@/lib/types/hvac';
 import type { DependencyItem, CompletionStatus } from '@/lib/types/hvac';
-import { NOTE_PROMPT_STATUSES, STATUS_CHIP, StatusDropdown } from './StatusDropdown';
+import { STATUS_CHIP, StatusDropdown } from './StatusDropdown';
+import { CommentThreadModal } from './CommentThreadModal';
 
 interface ChecklistItemProps {
   item: DependencyItem;
@@ -15,34 +14,28 @@ interface ChecklistItemProps {
   locked: boolean;
 }
 
+// The inline "+ Note"/textarea affordance this used to have was replaced by
+// the real threaded CommentThreadModal (see Comment model) — a single
+// unstructured comment field per completion couldn't support replies,
+// authorship, or timestamps. updateDependencyCompletion no longer takes a
+// comment argument at all now that nothing writes DependencyCompletion.comment
+// going forward.
 export function ChecklistItem({ item, taskId, locked }: ChecklistItemProps) {
-  const [showComment, setShowComment] = useState(false);
-  const [comment, setComment] = useState(item.completion?.comment ?? '');
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
   const currentStatus: CompletionStatus = item.completion?.status ?? 'PENDING';
   const cleared = isItemDone(currentStatus);
+  const commentCount = item.commentCount ?? 0;
 
   function setStatus(status: CompletionStatus) {
     if (locked) return;
     setError(null);
-    if (NOTE_PROMPT_STATUSES.includes(status)) setShowComment(true);
     startTransition(async () => {
-      const result = await updateDependencyCompletion(item.id, taskId, status, comment || null);
+      const result = await updateDependencyCompletion(item.id, taskId, status);
       if (!result.success) {
         setError(typeof result.error === 'string' ? result.error : 'Failed to update');
-      }
-    });
-  }
-
-  function saveComment() {
-    startTransition(async () => {
-      const result = await updateDependencyCompletion(item.id, taskId, currentStatus, comment || null);
-      if (!result.success) {
-        setError(typeof result.error === 'string' ? result.error : 'Failed to save');
-      } else {
-        setShowComment(false);
       }
     });
   }
@@ -78,44 +71,22 @@ export function ChecklistItem({ item, taskId, locked }: ChecklistItemProps) {
             </p>
           )}
 
-          {item.completion?.comment && !showComment && (
-            <p className="text-xs text-muted-foreground mt-1 italic">
-              &ldquo;{item.completion.comment}&rdquo;
-            </p>
-          )}
-
-          {showComment && (
-            <div className="mt-2 space-y-2">
-              <Textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder={NOTE_PROMPT_STATUSES.includes(currentStatus) ? 'Add a note on why (optional but recommended)…' : 'Add a note…'}
-                rows={2}
-                className="text-sm resize-none"
-              />
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={saveComment} disabled={isPending}>
-                  Save
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowComment(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-
           {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
         </div>
 
-        {!locked && !showComment && (
-          <button
-            onClick={() => setShowComment(true)}
-            className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 mt-0.5"
-          >
-            {item.completion?.comment ? 'Edit note' : '+ Note'}
-          </button>
-        )}
+        <button
+          onClick={() => setCommentsOpen(true)}
+          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 mt-0.5"
+          title="Comments"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          </svg>
+          {commentCount > 0 && <span>{commentCount}</span>}
+        </button>
       </div>
+
+      <CommentThreadModal dependencyItemId={commentsOpen ? item.id : null} onClose={() => setCommentsOpen(false)} />
     </div>
   );
 }

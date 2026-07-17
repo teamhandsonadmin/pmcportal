@@ -44,3 +44,7 @@ next-env.d.ts
 
 # tesseract.js caches its language pack in the CWD by default
 *.traineddata
+
+# Supabase CLI's local cache/metadata (project ref, pooler URL, etc.) — regenerated
+# per machine by `supabase link`, not meant to be shared across checkouts.
+/supabase/.temp

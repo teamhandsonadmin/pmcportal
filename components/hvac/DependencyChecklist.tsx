@@ -36,55 +36,63 @@ export function DependencyChecklist({ taskId, category, items, locked }: Depende
 
   return (
     <div
-      className="rounded-lg overflow-hidden"
+      className="rounded-lg"
       style={{ border: `1.5px solid ${allDone ? '#22C55E' : colors.border}` }}
     >
-      {/* Header */}
-      <div
-        className="px-4 py-3 border-b flex items-center justify-between"
-        style={{
-          backgroundColor: allDone ? '#F0FDF4' : colors.bg,
-          borderBottomColor: allDone ? '#86EFAC' : colors.badge,
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-base" style={{ color: allDone ? '#16A34A' : colors.dot }}>
-            {CATEGORY_ICONS[category]}
-          </span>
-          <h3
-            className="text-[12.5px] font-bold uppercase tracking-widest"
-            style={{ color: allDone ? '#15803D' : colors.text }}
-          >
-            {CATEGORY_LABELS[category]}
-          </h3>
-        </div>
-        <div className="flex items-center gap-2">
-          {allDone && (
-            <span className="text-[10.5px] font-semibold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-              ✓ Complete
-            </span>
-          )}
-          <span
-            className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded"
-            style={{
-              color: allDone ? '#15803D' : colors.text,
-              backgroundColor: allDone ? '#DCFCE7' : colors.badge,
-            }}
-          >
-            {completedCount}/{total}
-          </span>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div className="h-1" style={{ backgroundColor: colors.badge }}>
+      {/* overflow-hidden scoped to just the header+progress-bar strip (not the
+          whole card) — it exists only to clip their square backgrounds into
+          the card's rounded top corners. Scoping it here instead of on the
+          outer card lets the status dropdown below pop up past the card's
+          own bottom edge for the last item(s) in a category, instead of
+          being clipped off. */}
+      <div className="rounded-t-lg overflow-hidden">
+        {/* Header */}
         <div
-          className="h-full transition-all duration-500"
+          className="px-4 py-3 border-b flex items-center justify-between"
           style={{
-            width: total > 0 ? `${Math.round((completedCount / total) * 100)}%` : '0%',
-            backgroundColor: allDone ? '#22C55E' : colors.dot,
+            backgroundColor: allDone ? '#F0FDF4' : colors.bg,
+            borderBottomColor: allDone ? '#86EFAC' : colors.badge,
           }}
-        />
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-base" style={{ color: allDone ? '#16A34A' : colors.dot }}>
+              {CATEGORY_ICONS[category]}
+            </span>
+            <h3
+              className="text-[12.5px] font-bold uppercase tracking-widest"
+              style={{ color: allDone ? '#15803D' : colors.text }}
+            >
+              {CATEGORY_LABELS[category]}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            {allDone && (
+              <span className="text-[10.5px] font-semibold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                ✓ Complete
+              </span>
+            )}
+            <span
+              className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded"
+              style={{
+                color: allDone ? '#15803D' : colors.text,
+                backgroundColor: allDone ? '#DCFCE7' : colors.badge,
+              }}
+            >
+              {completedCount}/{total}
+            </span>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-1" style={{ backgroundColor: colors.badge }}>
+          <div
+            className="h-full transition-all duration-500"
+            style={{
+              width: total > 0 ? `${Math.round((completedCount / total) * 100)}%` : '0%',
+              backgroundColor: allDone ? '#22C55E' : colors.dot,
+            }}
+          />
+        </div>
       </div>
 
       {/* Items */}

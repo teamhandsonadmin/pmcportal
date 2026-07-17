@@ -31,7 +31,7 @@ export async function addTemplateItem(formData: FormData): Promise<ActionResult>
     return { success: false, error: 'Failed to add item' };
   }
 
-  revalidatePath('/hvac');
+  revalidatePath('/tasks');
   return { success: true };
 }
 
@@ -44,7 +44,7 @@ export async function updateTemplateItem(id: string, label: string): Promise<Act
     return { success: false, error: 'Failed to update item' };
   }
 
-  revalidatePath('/hvac');
+  revalidatePath('/tasks');
   return { success: true };
 }
 
@@ -55,7 +55,7 @@ export async function deleteTemplateItem(id: string): Promise<ActionResult> {
     return { success: false, error: 'Failed to delete item' };
   }
 
-  revalidatePath('/hvac');
+  revalidatePath('/tasks');
   return { success: true };
 }
 
@@ -81,7 +81,7 @@ export async function reorderTemplateItem(id: string, direction: 'up' | 'down'):
     return { success: false, error: 'Failed to reorder item' };
   }
 
-  revalidatePath('/hvac');
+  revalidatePath('/tasks');
   return { success: true };
 }
 
@@ -113,7 +113,7 @@ export async function applyTemplateToProject(projectId: string): Promise<ActionR
     created += missing.length;
   }
 
-  revalidatePath('/hvac');
+  revalidatePath('/tasks');
   revalidatePath('/works');
   return { success: true, data: { created } };
 }

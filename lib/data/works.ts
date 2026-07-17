@@ -3,6 +3,7 @@ import type { ActivityEvent, DashboardStats } from '@/lib/types/hvac';
 import { isItemDone } from '@/lib/types/hvac';
 import { isOverdue } from '@/lib/utils/format';
 import { isDependencySatisfied, type PrerequisiteTask } from '@/lib/utils/status-rules';
+import { worstChecklistStatus } from '@/lib/utils/checklist-health';
 import type { TaskRow } from '@/components/tasks/TasksExplorer';
 import type { GraphEdgeInput } from '@/components/tasks/TaskDependencyGraph';
 
@@ -23,7 +24,11 @@ export async function getWorksData() {
   const [tasks, works, users, deps, parallelLinks, recentActivityRaw] = await Promise.all([
     prisma.hvacTask.findMany({
       include: {
-        dependencyItems: { select: { completion: { select: { status: true } } } },
+        // category/itemLabel are read by the Gantt chart's checklist-health
+        // indicator/tooltip (see lib/utils/checklist-health.ts) — the status
+        // alone (as this select used to be) is enough for progressPct below,
+        // but not enough to show which category/item is actually the problem.
+        dependencyItems: { select: { category: true, itemLabel: true, completion: { select: { status: true } } } },
         work: { select: { id: true, name: true, code: true, color: true } },
       },
       orderBy: { createdAt: 'asc' },
@@ -112,11 +117,22 @@ export async function getWorksData() {
     const done = t.dependencyItems.filter((i) => isItemDone(i.completion?.status as never)).length;
     const progressPct = total > 0 ? Math.round((done / total) * 100) : 0;
 
+    // A completion row is created lazily (see DependencyCompletion's own
+    // schema comment) — an item with none yet defaults to PENDING, same
+    // fallback the checklist UI itself already uses.
+    const checklistItems = t.dependencyItems.map((i) => ({
+      category: i.category,
+      itemLabel: i.itemLabel,
+      status: i.completion?.status ?? 'PENDING',
+    }));
+
     return {
       id: t.id,
       taskId: t.taskId,
       taskName: t.taskName,
       projectName: t.projectName,
+      description: t.description,
+      taskTypeId: t.taskTypeId,
       status: t.status,
       plannedStartDate: t.plannedStartDate,
       dueDate: t.dueDate,
@@ -130,6 +146,8 @@ export async function getWorksData() {
       workColor: t.work?.color ?? '#9CA3AF',
       manualPositionX: t.manualPositionX,
       manualPositionY: t.manualPositionY,
+      checklistItems,
+      worstChecklistStatus: worstChecklistStatus(checklistItems.map((i) => i.status)),
       prerequisiteCount: startGatingDepsByTask.get(t.id)?.length ?? 0,
       prerequisiteCompletedCount: (startGatingDepsByTask.get(t.id) ?? [])
         .filter(({ prereqId, type }) => {

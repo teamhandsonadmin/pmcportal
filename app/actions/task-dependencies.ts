@@ -7,10 +7,10 @@ import { wouldCreateCycle } from '@/lib/utils/dependency-graph';
 import type { ActionResult, TaskStatus } from '@/lib/types/hvac';
 
 async function revalidateTaskFamily(taskId: string, dependsOnTaskId: string) {
-  revalidatePath(`/hvac/${taskId}`);
-  revalidatePath(`/hvac/${taskId}/overview`);
-  revalidatePath(`/hvac/${dependsOnTaskId}`);
-  revalidatePath(`/hvac/${dependsOnTaskId}/overview`);
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath(`/tasks/${taskId}/overview`);
+  revalidatePath(`/tasks/${dependsOnTaskId}`);
+  revalidatePath(`/tasks/${dependsOnTaskId}/overview`);
   revalidatePath('/works');
   // The flowchart canvas is a newer consumer of this action (connecting two
   // tasks by clicking) and wasn't in this list before — without it, the

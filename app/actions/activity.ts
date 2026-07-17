@@ -27,6 +27,6 @@ export async function addComment(
     return { success: false, error: 'Failed to post comment' };
   }
 
-  revalidatePath(`/hvac/${taskId}/activity`);
+  revalidatePath(`/tasks/${taskId}/activity`);
   return { success: true };
 }

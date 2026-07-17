@@ -6,8 +6,8 @@ import { CreateSftEntrySchema, UpdateTaskTotalSftSchema } from '@/lib/validation
 import type { ActionResult } from '@/lib/types/hvac';
 
 async function revalidateTaskFamily(taskId: string) {
-  revalidatePath(`/hvac/${taskId}/overview`);
-  revalidatePath('/hvac');
+  revalidatePath(`/tasks/${taskId}/overview`);
+  revalidatePath('/tasks');
   revalidatePath('/works');
   const task = await prisma.hvacTask.findUnique({
     where: { id: taskId },

@@ -6,10 +6,10 @@ import { UpdateDependencySchema } from '@/lib/validations/hvac';
 import type { ActionResult, CompletionStatus, DependencyCategory } from '@/lib/types/hvac';
 
 function revalidateTask(taskId: string) {
-  revalidatePath(`/hvac/${taskId}/dependencies`);
-  revalidatePath(`/hvac/${taskId}/overview`);
-  revalidatePath(`/hvac/${taskId}`);
-  revalidatePath('/hvac');
+  revalidatePath(`/tasks/${taskId}/dependencies`);
+  revalidatePath(`/tasks/${taskId}/overview`);
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath('/tasks');
   revalidatePath('/works');
 }
 
@@ -72,13 +72,16 @@ export async function deleteDependencyItem(itemId: string, taskId: string): Prom
   return { success: true };
 }
 
+// No longer takes/writes a comment — real threaded comments live in the
+// Comment model now (see CommentThreadModal + app/actions/comments.ts).
+// DependencyCompletion.comment is left untouched by this (neither cleared
+// nor overwritten) since something else may still read the old value.
 export async function updateDependencyCompletion(
   itemId: string,
   taskId: string,
-  status: CompletionStatus,
-  comment?: string | null
+  status: CompletionStatus
 ): Promise<ActionResult> {
-  const parsed = UpdateDependencySchema.safeParse({ status, comment: comment ?? null });
+  const parsed = UpdateDependencySchema.safeParse({ status });
 
   if (!parsed.success) {
     return { success: false, error: parsed.error.flatten().fieldErrors as Record<string, string[]> };
@@ -90,12 +93,10 @@ export async function updateDependencyCompletion(
       create: {
         itemId,
         status: parsed.data.status as never,
-        comment: parsed.data.comment ?? null,
         completedAt: parsed.data.status === 'YES' ? new Date() : null,
       },
       update: {
         status: parsed.data.status as never,
-        comment: parsed.data.comment ?? null,
         completedAt: parsed.data.status === 'YES' ? new Date() : null,
       },
     });
@@ -111,8 +112,8 @@ export async function updateDependencyCompletion(
     },
   }).catch(() => {});
 
-  revalidatePath(`/hvac/${taskId}/dependencies`);
-  revalidatePath(`/hvac/${taskId}/overview`);
-  revalidatePath('/hvac');
+  revalidatePath(`/tasks/${taskId}/dependencies`);
+  revalidatePath(`/tasks/${taskId}/overview`);
+  revalidatePath('/tasks');
   return { success: true };
 }

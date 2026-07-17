@@ -17,7 +17,7 @@ interface DependencyProgressProps {
 export function DependencyProgress({ progress }: DependencyProgressProps) {
   return (
     <div className="space-y-3">
-      {(['architect', 'client', 'consultant', 'contractor', 'inspector', 'procurement'] as DependencyCategory[]).map((cat) => {
+      {(['architect', 'client', 'consultant', 'contractor', 'procurement'] as DependencyCategory[]).map((cat) => {
         const data = progress.find((p) => p.category === cat);
         const pct = data?.completionPct ?? 0;
         const done = data?.completedItems ?? 0;

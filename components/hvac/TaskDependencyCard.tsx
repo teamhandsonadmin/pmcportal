@@ -110,7 +110,7 @@ function PrerequisiteRow({
       style={{ opacity: isPending ? 0.5 : 1 }}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <Link href={`/hvac/${prerequisite.id}`} className="text-[12.5px] font-medium truncate hover:underline">
+        <Link href={`/tasks/${prerequisite.id}`} className="text-[12.5px] font-medium truncate hover:underline">
           {prerequisite.taskId} — {prerequisite.taskName}
         </Link>
         <span className="text-[10.5px] text-muted-foreground flex-shrink-0">{prerequisite.workCode}</span>

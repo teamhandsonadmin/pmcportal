@@ -11,7 +11,7 @@ import type { CompletionStatus } from '@/lib/types/hvac';
 export const STATUS_CHIP: Record<CompletionStatus, { label: string; bg: string; text: string; dot: string }> = {
   YES:       { label: 'Yes',       bg: '#DCFCE7', text: '#15803D', dot: '#22C55E' },
   PROCEED:   { label: 'Proceed',   bg: '#CCFBF1', text: '#0F766E', dot: '#14B8A6' },
-  PENDING:   { label: 'Pending',   bg: '#F3F4F6', text: '#4B5563', dot: '#9CA3AF' },
+  PENDING:   { label: 'Pending',   bg: '#FEE2E2', text: '#B91C1C', dot: '#EF4444' },
   ON_HOLD:   { label: 'On Hold',   bg: '#FEF3C7', text: '#92400E', dot: '#F59E0B' },
   REVISIONS: { label: 'Revisions', bg: '#FFEDD5', text: '#C2410C', dot: '#FB923C' },
   NO:        { label: 'No',        bg: '#FEE2E2', text: '#B91C1C', dot: '#EF4444' },
@@ -20,10 +20,6 @@ export const STATUS_ORDER: CompletionStatus[] = ['YES', 'PROCEED', 'PENDING', 'O
 
 // Clears vs. blocks — mirrors isItemDone() in lib/types/hvac.ts.
 export const CLEARING_STATUSES: CompletionStatus[] = ['YES', 'PROCEED'];
-
-// Statuses where it's worth nudging the user toward leaving a reason —
-// not enforced, just prompted (see StatusDropdown's onChange contract below).
-export const NOTE_PROMPT_STATUSES: CompletionStatus[] = ['NO', 'ON_HOLD', 'REVISIONS'];
 
 function WarningIcon({ size = 10 }: { size?: number }) {
   return (

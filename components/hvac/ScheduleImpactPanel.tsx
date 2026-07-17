@@ -34,7 +34,7 @@ export function ScheduleImpactPanel({ impact }: ScheduleImpactPanelProps) {
             <p className="text-[12.5px] text-muted-foreground">
               Delayed by {self.inheritedDelayDays} working day{self.inheritedDelayDays === 1 ? '' : 's'} due to{' '}
               <Link
-                href={`/hvac/${drivingPrerequisite.id}/overview`}
+                href={`/tasks/${drivingPrerequisite.id}/overview`}
                 className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
               >
                 {drivingPrerequisite.taskCode} — {drivingPrerequisite.taskName}
@@ -60,7 +60,7 @@ export function ScheduleImpactPanel({ impact }: ScheduleImpactPanelProps) {
             {downstreamImpacted.map((d) => (
               <li key={d.id} className="text-[12px] flex items-center justify-between gap-2">
                 <Link
-                  href={`/hvac/${d.id}/overview`}
+                  href={`/tasks/${d.id}/overview`}
                   className="text-foreground hover:underline underline-offset-2 truncate"
                 >
                   {d.taskCode} — {d.taskName}
