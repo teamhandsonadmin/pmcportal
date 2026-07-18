@@ -9,6 +9,7 @@ import { TaskDependencyGraph, type GraphEdgeInput } from '@/components/tasks/Tas
 import { BulkDeleteDialog } from '@/components/tasks/BulkDeleteDialog';
 import type { TaskTypeOption } from '@/components/hvac/TaskTypeManager';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
+import type { TaskDelayInfo } from '@/lib/utils/delay-engine';
 import type { TaskStatus, DependencyCategory, CompletionStatus } from '@/lib/types/hvac';
 
 export interface TaskRow {
@@ -22,6 +23,7 @@ export interface TaskRow {
   plannedStartDate: Date | null;
   dueDate: Date | null;
   actualStartDate: Date | null;
+  actualEndDate: Date | null;
   progressPct: number;
   overdue: boolean;
   assigneeName: string | null;
@@ -56,6 +58,8 @@ export function TasksExplorer({
   initialWork,
   works,
   taskTypes,
+  delayById,
+  groundedIds,
 }: {
   rows: TaskRow[];
   edges: GraphEdgeInput[];
@@ -63,6 +67,8 @@ export function TasksExplorer({
   initialWork?: string;
   works: WorkOption[];
   taskTypes: TaskTypeOption[];
+  delayById: Record<string, TaskDelayInfo>;
+  groundedIds: string[];
 }) {
   const [search, setSearch] = useState('');
   const [workF, setWorkF] = useState(initialWork ?? '');
@@ -173,6 +179,7 @@ export function TasksExplorer({
         plannedStartDate: r.plannedStartDate,
         dueDate: r.dueDate,
         actualStartDate: r.actualStartDate,
+        actualEndDate: r.actualEndDate,
         manualPositionX: r.manualPositionX,
         manualPositionY: r.manualPositionY,
         prerequisiteCount: r.prerequisiteCount,
@@ -269,6 +276,8 @@ export function TasksExplorer({
           parallelEdges={filteredParallelEdges}
           works={works}
           taskTypes={taskTypes}
+          delayById={delayById}
+          groundedIds={groundedIds}
           isFullscreen={showAsFullscreen}
           onReady={(instance) => { rfInstanceRef.current = instance; }}
           emptyState={filtered.length === 0 ? { hasFilter, onClear: clearFilters } : undefined}

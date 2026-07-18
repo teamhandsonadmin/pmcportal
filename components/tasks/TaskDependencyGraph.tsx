@@ -33,6 +33,7 @@ import dagre from '@dagrejs/dagre';
 import type { TaskStatus, DependencyType } from '@/lib/types/hvac';
 import type { ActionResult } from '@/lib/types/hvac';
 import { STATUS_COLOR_PALETTE, STATUS_COLOR_GROUP, allowedTransitions, TRANSITION_LABELS, DEPENDENCY_TYPE_LABELS, isDependencySatisfied } from '@/lib/utils/status-rules';
+import type { TaskDelayInfo } from '@/lib/utils/delay-engine';
 import type { WorkOption } from '@/components/tasks/TasksExplorer';
 import type { TaskTypeOption } from '@/components/hvac/TaskTypeManager';
 import {
@@ -42,6 +43,7 @@ import {
   updateTaskDescription,
   updateTaskType,
   updateTaskPlannedDates,
+  updateTaskActualDate,
   updateTaskStatus,
   deleteHvacTask,
   getTaskDeleteImpact,
@@ -105,6 +107,7 @@ export interface GraphTask {
   plannedStartDate: Date | null;
   dueDate: Date | null;
   actualStartDate: Date | null;
+  actualEndDate: Date | null;
   manualPositionX: number | null;
   manualPositionY: number | null;
   prerequisiteCount: number;
@@ -205,31 +208,6 @@ function formatCardDateRange(start: Date | null, due: Date | null): string {
   return 'No planned dates';
 }
 
-interface TaskDelayDisplay {
-  overdueDays: number;
-  projectedDate: Date;
-}
-
-// Same simple calendar-day rule the client report uses for its own per-task
-// lateness (lib/data/report.ts's overdueDaysByTaskId) — NOT the internal
-// Gantt's working-day/CPM schedule-impact engine. Deliberately consistent
-// with the report rather than the Gantt's numbers, since this is exactly
-// the "planned date -> delay -> projected date" view a client sees there
-// too; showing a different day-count here would read as contradictory data
-// about the very same task.
-function computeTaskDelay(dueDate: Date | null, status: TaskStatus): TaskDelayDisplay | null {
-  if (!dueDate || status === 'completed') return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(dueDate);
-  due.setHours(0, 0, 0, 0);
-  const overdueDays = Math.round((today.getTime() - due.getTime()) / 86_400_000);
-  if (overdueDays <= 0) return null;
-  const projectedDate = new Date(due);
-  projectedDate.setDate(projectedDate.getDate() + overdueDays);
-  return { overdueDays, projectedDate };
-}
-
 // Several actions (createTaskFromCanvas, updateTaskPlannedDates, ...) can
 // fail with EITHER a plain string OR a Zod-style field-errors object (e.g.
 // { due_date: ['Due date must be on or after the planned start date'] }) —
@@ -269,6 +247,19 @@ interface GraphActions {
   // Parallel, blue for FS/SS/FF/SF) without needing to know activeTool.
   linkType: RelationshipType | null;
   hoveredNodeId: string | null;
+  // Real dependency-chain (CPM) projections, keyed by HvacTask.id — the
+  // same engine/data the internal Gantt's schedule-impact popup uses (see
+  // lib/utils/delay-engine.ts, lib/data/gantt-delay.ts), computed once
+  // server-side for the whole graph and read here instead of each TaskNode
+  // deriving its own "is this late" from just its own dueDate. That's what
+  // makes one task's actual-date edit cascade into every downstream task's
+  // badge: the engine already propagates inherited delay through FS/SS/FF/SF
+  // edges, this just reads the result. A task not present in groundedIds has
+  // no real schedule commitment anywhere in its own chain — delayById still
+  // has an entry for it (a fallback-anchored placeholder), which would read
+  // as a fabricated delay if shown, so it's suppressed for those.
+  delayById: Record<string, TaskDelayInfo>;
+  groundedIds: Set<string>;
 }
 const GraphActionsContext = createContext<GraphActions>({
   onDuplicate: () => {},
@@ -280,6 +271,8 @@ const GraphActionsContext = createContext<GraphActions>({
   pendingLinkSource: null,
   linkType: null,
   hoveredNodeId: null,
+  delayById: {},
+  groundedIds: new Set(),
 });
 
 // Bulk-imported task names (Seq civil_2, Interiors) are built as
@@ -315,7 +308,14 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
   // Selector resolves to a boolean, not the raw zoom level, so this only
   // re-renders nodes when crossing the threshold — not on every zoom tick.
   const showDates = useStore((s) => s.transform[2] >= DATE_VISIBLE_ZOOM_THRESHOLD);
-  const delay = computeTaskDelay(data.dueDate, data.status);
+  // Real dependency-chain projection (CPM engine), not just "is this task's
+  // own dueDate in the past" — see GraphActions.delayById's doc comment.
+  // Ungrounded (no real schedule data anywhere in its own chain) or already
+  // completed: nothing meaningful to show.
+  const delayInfo = actions.groundedIds.has(id) ? actions.delayById[id] : undefined;
+  const delay = delayInfo && data.status !== 'completed' && delayInfo.totalDelayDays > 0
+    ? { totalDelayDays: delayInfo.totalDelayDays, inheritedDelayDays: delayInfo.inheritedDelayDays, ownDelayDays: delayInfo.ownDelayDays, projectedFinish: delayInfo.projectedFinish }
+    : null;
 
   return (
     <div
@@ -401,7 +401,7 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
             className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
             style={{ background: '#FEE2E2', color: '#B91C1C' }}
           >
-            {formatCardDate(data.dueDate)} → +{delay.overdueDays}d → {formatCardDate(delay.projectedDate)}
+            {formatCardDate(data.dueDate)} → +{delay.totalDelayDays}d → {formatCardDate(delay.projectedFinish)}
           </div>
         ) : (
           <div
@@ -426,7 +426,7 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
                 onClick={(e) => e.stopPropagation()}
                 className="absolute -top-2 -left-2 w-5 h-5 rounded-full border-2 border-white shadow-sm flex items-center justify-center z-10"
                 style={{ backgroundColor: '#DC2626' }}
-                title={`Delayed ${delay.overdueDays} day${delay.overdueDays === 1 ? '' : 's'}`}
+                title={`Delayed ${delay.totalDelayDays} day${delay.totalDelayDays === 1 ? '' : 's'}`}
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round">
                   <line x1="12" y1="7" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
@@ -435,9 +435,14 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
             }
           />
           <TooltipContent side="top" className="p-2.5">
-            <p className="text-[11.5px] font-bold text-white">Delayed {delay.overdueDays} day{delay.overdueDays === 1 ? '' : 's'}</p>
+            <p className="text-[11.5px] font-bold text-white">Delayed {delay.totalDelayDays} day{delay.totalDelayDays === 1 ? '' : 's'}</p>
+            {delay.inheritedDelayDays > 0 && (
+              <p className="text-[11px] text-gray-300 mt-1">
+                {delay.inheritedDelayDays} inherited, {delay.ownDelayDays} added by this task
+              </p>
+            )}
             <p className="text-[11px] text-gray-300 mt-1">Planned: {formatCardDate(data.dueDate)}</p>
-            <p className="text-[11px] text-gray-300">Projected: {formatCardDate(delay.projectedDate)}</p>
+            <p className="text-[11px] text-gray-300">Projected: {formatCardDate(delay.projectedFinish)}</p>
           </TooltipContent>
         </Tooltip>
       )}
@@ -1212,6 +1217,15 @@ interface EditFormState {
   description: string;
   plannedStartDate: string;
   dueDate: string;
+  // The real, on-the-ground dates — distinct from the plan above. Not
+  // working-day-restricted (an actual event can genuinely land on a Sunday
+  // or holiday, see updateTaskActualDate's own comment) and, unlike
+  // plannedStartDate/dueDate, feed the CPM delay engine's projectedStart/
+  // projectedFinish for every downstream task once saved — this is what
+  // makes the flowchart's delay badges cascade from one task's real dates
+  // to the tasks after it, not just react to this one task's own dueDate.
+  actualStartDate: string;
+  actualEndDate: string;
   taskTypeId: string; // '' = no type
   // Freeform, NOT persisted on HvacTask itself — purely a client-side input
   // that (combined with plannedStartDate) drives the dueDate auto-suggestion
@@ -1238,6 +1252,8 @@ interface TaskDependencyGraphProps {
   parallelEdges: GraphEdgeInput[];
   works: WorkOption[];
   taskTypes: TaskTypeOption[];
+  delayById: Record<string, TaskDelayInfo>;
+  groundedIds: string[];
   isFullscreen?: boolean;
   onReady?: (instance: ReactFlowInstance) => void;
   emptyState?: { hasFilter: boolean; onClear: () => void };
@@ -1248,9 +1264,10 @@ export function TaskDependencyGraph({
   // taskTypes was unused here for a while (the create form's own Task Type
   // picker was removed from the Add Task dialog) — now read by the EDIT
   // dialog's Task Type dropdown instead (see the Quick Edit dialog below).
-  tasks, edges, parallelEdges, works, taskTypes, isFullscreen, onReady, emptyState, fullscreenContainer,
+  tasks, edges, parallelEdges, works, taskTypes, delayById, groundedIds, isFullscreen, onReady, emptyState, fullscreenContainer,
 }: TaskDependencyGraphProps) {
   const router = useRouter();
+  const groundedSet = useMemo(() => new Set(groundedIds), [groundedIds]);
   const [darkCanvas, setDarkCanvas] = useState(false);
   const instanceRef = useRef<ReactFlowInstance | null>(null);
 
@@ -1309,6 +1326,8 @@ export function TaskDependencyGraph({
       description: task.description ?? '',
       plannedStartDate: task.plannedStartDate ? formatDateKey(task.plannedStartDate, { utc: true }) : '',
       dueDate: task.dueDate ? formatDateKey(task.dueDate, { utc: true }) : '',
+      actualStartDate: task.actualStartDate ? formatDateKey(task.actualStartDate, { utc: true }) : '',
+      actualEndDate: task.actualEndDate ? formatDateKey(task.actualEndDate, { utc: true }) : '',
       taskTypeId: task.taskTypeId ?? '',
       durationDays: '',
     });
@@ -1696,6 +1715,25 @@ export function TaskDependencyGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Whole-board schedule rollup for the toolbar badge below — the latest
+  // dueDate currently on this board vs. the latest REAL projected finish
+  // (CPM-cascaded) among grounded tasks. Distinct concepts: plannedCompletion
+  // is just "what everyone originally committed to"; projectedCompletion is
+  // "given every actual date entered so far, when does the last task in the
+  // chain actually land" — the two only diverge once something's delayed.
+  const { plannedCompletion, projectedCompletion } = useMemo(() => {
+    const dueDates = tasks.map((t) => t.dueDate).filter((d): d is Date => !!d);
+    const projectedDates = tasks
+      .filter((t) => groundedSet.has(t.id))
+      .map((t) => delayById[t.id]?.projectedFinish)
+      .filter((d): d is Date => !!d);
+    return {
+      plannedCompletion: dueDates.length > 0 ? dueDates.reduce((a, b) => (a > b ? a : b)) : null,
+      projectedCompletion: projectedDates.length > 0 ? projectedDates.reduce((a, b) => (a > b ? a : b)) : null,
+    };
+  }, [tasks, delayById, groundedSet]);
+  const boardIsDelayed = !!(plannedCompletion && projectedCompletion && projectedCompletion > plannedCompletion);
+
   const graphActionsValue = useMemo(
     (): GraphActions => ({
       onDuplicate: handleDuplicate,
@@ -1707,8 +1745,10 @@ export function TaskDependencyGraph({
       pendingLinkSource,
       linkType: activeTool === 'link' ? linkType : null,
       hoveredNodeId,
+      delayById,
+      groundedIds: groundedSet,
     }),
-    [handleDuplicate, handleQuickStatusChange, openEditForm, handleOpenTask, requestEdgeDelete, locked, pendingLinkSource, activeTool, linkType, hoveredNodeId]
+    [handleDuplicate, handleQuickStatusChange, openEditForm, handleOpenTask, requestEdgeDelete, locked, pendingLinkSource, activeTool, linkType, hoveredNodeId, delayById, groundedSet]
   );
 
   const nodesForFlow = useMemo(
@@ -2187,6 +2227,10 @@ export function TaskDependencyGraph({
     const originalStart = original?.plannedStartDate ? formatDateKey(original.plannedStartDate, { utc: true }) : '';
     const originalDue = original?.dueDate ? formatDateKey(original.dueDate, { utc: true }) : '';
     const datesChanged = originalStart !== editForm.plannedStartDate || originalDue !== editForm.dueDate;
+    const originalActualStart = original?.actualStartDate ? formatDateKey(original.actualStartDate, { utc: true }) : '';
+    const originalActualEnd = original?.actualEndDate ? formatDateKey(original.actualEndDate, { utc: true }) : '';
+    const actualStartChanged = originalActualStart !== editForm.actualStartDate;
+    const actualEndChanged = originalActualEnd !== editForm.actualEndDate;
 
     if (nameChanged) {
       const res = await updateTaskName(editForm.nodeId, fullName);
@@ -2207,6 +2251,14 @@ export function TaskDependencyGraph({
       });
       if (!res.success) { setEditError(formatActionError(res.error, 'Failed to update dates')); return; }
     }
+    if (actualStartChanged) {
+      const res = await updateTaskActualDate(editForm.nodeId, 'actualStartDate', editForm.actualStartDate || null);
+      if (!res.success) { setEditError(formatActionError(res.error, 'Failed to update actual start date')); return; }
+    }
+    if (actualEndChanged) {
+      const res = await updateTaskActualDate(editForm.nodeId, 'actualEndDate', editForm.actualEndDate || null);
+      if (!res.success) { setEditError(formatActionError(res.error, 'Failed to update actual end date')); return; }
+    }
 
     setNodes((nds) => nds.map((n) => (n.id === editForm.nodeId
       ? {
@@ -2218,11 +2270,19 @@ export function TaskDependencyGraph({
             taskTypeId: editForm.taskTypeId || null,
             plannedStartDate: editForm.plannedStartDate ? new Date(editForm.plannedStartDate) : null,
             dueDate: editForm.dueDate ? new Date(editForm.dueDate) : null,
+            actualStartDate: editForm.actualStartDate ? new Date(editForm.actualStartDate) : null,
+            actualEndDate: editForm.actualEndDate ? new Date(editForm.actualEndDate) : null,
           },
         }
       : n)));
     flashSaved();
     setEditForm(null);
+    // An actual-date change can shift every downstream task's projected
+    // dates (the CPM engine recomputes across the whole dependency graph,
+    // not just this node) — delayById is fetched server-side once per page
+    // load, so this refetches it rather than trying to re-run that engine
+    // client-side just for a local patch.
+    if (actualStartChanged || actualEndChanged) router.refresh();
   }
 
   async function confirmDelete() {
@@ -2435,6 +2495,34 @@ export function TaskDependencyGraph({
             if (singleSelectedEdge) requestEdgeTypeChange(singleSelectedEdge.id, type);
           }}
         />
+      )}
+
+      {/* Whole-board projected completion — the latest CPM-projected finish
+          across every grounded task currently on the canvas, given every
+          actual date entered so far. Always visible (not gated by
+          selection/zoom) since this is the one summary number that answers
+          "given what's actually happened so far, when does this all really
+          finish" without opening a single task. Colored the same way the
+          client report's own Schedule Summary treats a delayed vs. on-time
+          project, so the two never read as contradicting each other. */}
+      {projectedCompletion && (
+        <div
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11.5px] font-semibold shadow-sm"
+          style={boardIsDelayed
+            ? { borderColor: '#FECACA', background: '#FEF2F2', color: '#B91C1C' }
+            : { borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
+          title={boardIsDelayed && plannedCompletion
+            ? `Originally planned to finish ${formatCardDate(plannedCompletion)} — pushed out by current delays`
+            : 'Latest projected finish across every task on this board'}
+        >
+          {boardIsDelayed && (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          )}
+          Projected Completion: {formatCardDate(projectedCompletion)}
+        </div>
       )}
 
       {/* ── Top-right utilities: reset layout + board theme (not part of the tool set, kept accessible) ── */}
@@ -2710,6 +2798,40 @@ export function TaskDependencyGraph({
                 <p className="text-[11px] text-muted-foreground">
                   Recomputes Planned End from Planned Start — still overridable above.
                 </p>
+              </div>
+            </div>
+
+            {/* Plain date inputs, not WorkingDayPicker — an actual event can
+                genuinely have happened on a Sunday or a holiday, so the
+                working-day restriction that applies to the planned dates
+                above would be actively wrong here (matches
+                ActualDatesEditor.tsx's identical convention). Saving either
+                one recomputes every downstream task's projected dates via
+                the CPM delay engine — see submitEditForm's router.refresh(). */}
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border">
+              <div className="space-y-1.5 pt-3">
+                <Label htmlFor="canvas_edit_actual_start">
+                  Actual Start <span className="text-muted-foreground">(optional)</span>
+                </Label>
+                <input
+                  id="canvas_edit_actual_start"
+                  type="date"
+                  value={editForm?.actualStartDate ?? ''}
+                  onChange={(e) => setEditForm((f) => (f ? { ...f, actualStartDate: e.target.value } : f))}
+                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-[13px] text-foreground shadow-none transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              </div>
+              <div className="space-y-1.5 pt-3">
+                <Label htmlFor="canvas_edit_actual_end">
+                  Actual End <span className="text-muted-foreground">(optional)</span>
+                </Label>
+                <input
+                  id="canvas_edit_actual_end"
+                  type="date"
+                  value={editForm?.actualEndDate ?? ''}
+                  onChange={(e) => setEditForm((f) => (f ? { ...f, actualEndDate: e.target.value } : f))}
+                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-[13px] text-foreground shadow-none transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
               </div>
             </div>
           </div>

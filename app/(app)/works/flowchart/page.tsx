@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { TasksExplorer } from '@/components/tasks/TasksExplorer';
 import { getWorksData } from '@/lib/data/works';
+import { getGanttDelayData } from '@/lib/data/gantt-delay';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -10,9 +11,10 @@ interface Props {
 }
 
 export default async function WorksFlowchartPage({ searchParams }: Props) {
-  const [{ rows, edges, parallelEdges, works }, taskTypes] = await Promise.all([
+  const [{ rows, edges, parallelEdges, works }, taskTypes, { delayById, groundedIds }] = await Promise.all([
     getWorksData(),
     prisma.taskType.findMany({ select: { id: true, name: true, defaultDurationDays: true }, orderBy: { name: 'asc' } }),
+    getGanttDelayData(),
   ]);
   const { work } = await searchParams;
   const workOptions = works.map((w) => ({ id: w.id, name: w.name, code: w.code, color: w.color }));
@@ -31,7 +33,16 @@ export default async function WorksFlowchartPage({ searchParams }: Props) {
         <h1 className="text-[15px] font-semibold tracking-[-0.01em]">Flowchart</h1>
       </div>
 
-      <TasksExplorer rows={rows} edges={edges} parallelEdges={parallelEdges} initialWork={work} works={workOptions} taskTypes={taskTypes} />
+      <TasksExplorer
+        rows={rows}
+        edges={edges}
+        parallelEdges={parallelEdges}
+        initialWork={work}
+        works={workOptions}
+        taskTypes={taskTypes}
+        delayById={delayById}
+        groundedIds={groundedIds}
+      />
     </div>
   );
 }

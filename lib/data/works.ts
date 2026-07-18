@@ -137,6 +137,7 @@ export async function getWorksData() {
       plannedStartDate: t.plannedStartDate,
       dueDate: t.dueDate,
       actualStartDate: t.actualStartDate,
+      actualEndDate: t.actualEndDate,
       progressPct,
       overdue: isOverdue(t.dueDate) && t.status !== 'completed',
       assigneeName: t.assignedTo ? userMap.get(t.assignedTo) ?? null : null,
