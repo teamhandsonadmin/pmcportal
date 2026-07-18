@@ -68,6 +68,14 @@ export interface ReportScheduleSummary {
   plannedDays: number;
   actualDays: number;
   delayedDays: number;
+  // The original commitment vs. where completion actually lands given the
+  // current slippage — plannedEndDate is the latest dueDate on record;
+  // projectedEndDate is that same date pushed out by delayedDays (0 shift
+  // when nothing's overdue, so it just equals plannedEndDate). This is what
+  // actually answers "the project is delayed by how much, and when will it
+  // really finish" — the day-count alone doesn't say what date that lands on.
+  plannedEndDate: Date;
+  projectedEndDate: Date;
 }
 
 export interface ReportDateRange {
@@ -271,8 +279,10 @@ export async function getProjectReportData(projectId: string, range?: ReportDate
     // same day a task first goes overdue, instead of only once the
     // project's total planned span has been exhausted.
     const delayedDays = Math.max(0, ...overdueDaysByTaskId.values());
+    const plannedEndDate = planEnd;
+    const projectedEndDate = delayedDays > 0 ? addDays(planEnd, delayedDays) : planEnd;
 
-    schedule = { plannedDays, actualDays, delayedDays };
+    schedule = { plannedDays, actualDays, delayedDays, plannedEndDate, projectedEndDate };
   }
 
   const rangeLabel = range ? `${format(range.from, 'MMM d, yyyy')} – ${format(range.to, 'MMM d, yyyy')}` : null;

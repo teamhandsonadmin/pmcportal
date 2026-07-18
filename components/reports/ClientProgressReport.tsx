@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { ClientGanttView } from '@/components/reports/ClientGanttView';
 import { PROGRESS_BUCKET_COLORS as PROGRESS_COLORS } from '@/lib/utils/progress-bucket';
+import { formatDate } from '@/lib/utils/format';
 import type { ProjectReportData } from '@/lib/data/report';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -166,50 +167,83 @@ const SCHEDULE_COLORS = { onSchedule: '#22C55E', delayed: '#EF4444' };
 
 function ScheduleSummary({ schedule }: { schedule: NonNullable<ProjectReportData['schedule']> }) {
   const onScheduleDays = Math.min(schedule.plannedDays, schedule.actualDays);
+  const isDelayed = schedule.delayedDays > 0;
   const data = [
     { name: 'On Schedule', value: onScheduleDays, color: SCHEDULE_COLORS.onSchedule },
     { name: 'Delayed', value: schedule.delayedDays, color: SCHEDULE_COLORS.delayed },
   ].filter((d) => d.value > 0);
 
   return (
-    <div className="flex items-center gap-8 flex-wrap">
-      <div style={{ width: 180, height: 180 }} className="flex-shrink-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="value"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius={45}
-              outerRadius={85}
-              paddingAngle={2}
-              labelLine={false}
-              stroke="none"
-            >
-              {data.map((d) => (
-                <Cell key={d.name} fill={d.color} />
-              ))}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+    <div>
+      {/* The one-sentence headline this whole section exists to answer —
+          the day-count and the two dates below are the supporting detail,
+          not the first thing a reader should have to piece together
+          themselves. */}
+      <div
+        className="rounded-xl px-4 py-3 mb-5"
+        style={{ backgroundColor: isDelayed ? '#FEF2F2' : '#F0FDF4' }}
+      >
+        <p className="text-[14px] font-bold" style={{ color: isDelayed ? SCHEDULE_COLORS.delayed : '#15803D' }}>
+          {isDelayed
+            ? `Project is delayed by ${schedule.delayedDays} day${schedule.delayedDays === 1 ? '' : 's'}`
+            : 'Project is on schedule'}
+        </p>
       </div>
-      <div className="flex gap-8 flex-wrap">
+
+      <div className="flex items-center gap-8 flex-wrap">
+        <div style={{ width: 180, height: 180 }} className="flex-shrink-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={data}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={45}
+                outerRadius={85}
+                paddingAngle={2}
+                labelLine={false}
+                stroke="none"
+              >
+                {data.map((d) => (
+                  <Cell key={d.name} fill={d.color} />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="flex gap-8 flex-wrap">
+          <div>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Planned Days</p>
+            <p className="text-[22px] font-extrabold text-gray-900 mt-0.5">{schedule.plannedDays}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Actual Days</p>
+            <p className="text-[22px] font-extrabold text-gray-900 mt-0.5">{schedule.actualDays}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: isDelayed ? SCHEDULE_COLORS.delayed : '#9CA3AF' }}>
+              Delayed Days
+            </p>
+            <p className="text-[22px] font-extrabold mt-0.5" style={{ color: isDelayed ? SCHEDULE_COLORS.delayed : '#111827' }}>
+              {schedule.delayedDays}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-8 flex-wrap mt-5 pt-5 border-t border-gray-100">
         <div>
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Planned Days</p>
-          <p className="text-[22px] font-extrabold text-gray-900 mt-0.5">{schedule.plannedDays}</p>
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Planned Completion</p>
+          <p className="text-[15px] font-bold text-gray-900 mt-0.5">{formatDate(schedule.plannedEndDate)}</p>
         </div>
         <div>
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Actual Days</p>
-          <p className="text-[22px] font-extrabold text-gray-900 mt-0.5">{schedule.actualDays}</p>
-        </div>
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: schedule.delayedDays > 0 ? SCHEDULE_COLORS.delayed : '#9CA3AF' }}>
-            Delayed Days
+          <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: isDelayed ? SCHEDULE_COLORS.delayed : '#9CA3AF' }}>
+            Projected Completion
           </p>
-          <p className="text-[22px] font-extrabold mt-0.5" style={{ color: schedule.delayedDays > 0 ? SCHEDULE_COLORS.delayed : '#111827' }}>
-            {schedule.delayedDays}
+          <p className="text-[15px] font-bold mt-0.5" style={{ color: isDelayed ? SCHEDULE_COLORS.delayed : '#111827' }}>
+            {formatDate(schedule.projectedEndDate)}
           </p>
         </div>
       </div>
