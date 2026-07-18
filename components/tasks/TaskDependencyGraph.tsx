@@ -182,6 +182,32 @@ function taskIdColumnNumber(taskId: string | null | undefined): number {
   return match ? parseInt(match[1], 10) : Infinity;
 }
 
+interface PhaseSection {
+  label: string;
+  minCol: number;
+  maxCol: number;
+}
+
+// Derived from SECTION_HEADINGS, not a second hand-maintained list — the
+// board's own phase boundaries already ARE this data, just expressed as
+// "after column N" markers. The one addition here is the phase before the
+// first banner even exists: SECTION_HEADINGS never labels it (there was no
+// divider needed when it was the only phase on the board), so it's named
+// "Civil" explicitly — the original single work this whole board started
+// as. Used to scope the toolbar's projected-completion badge(s) per phase
+// instead of one number for the entire board, so "Civil" and a later
+// "Structure Internal Works"/"External Works" phase each get their own
+// answer to "when does THIS part finish" once those phases have real tasks
+// on them again.
+const PHASE_SECTIONS: PhaseSection[] = [
+  { label: 'Civil', minCol: -Infinity, maxCol: SECTION_HEADINGS[0]?.afterColumnNumber ?? Infinity },
+  ...SECTION_HEADINGS.map((heading, i) => ({
+    label: heading.label,
+    minCol: heading.afterColumnNumber + 1,
+    maxCol: SECTION_HEADINGS[i + 1]?.afterColumnNumber ?? Infinity,
+  })),
+];
+
 // Shared by layoutWithDagre (to reserve enough row-gap at a heading boundary
 // so the banner doesn't overlap either phase) and sectionHeadingNodes (to
 // actually position it) — must stay in sync between the two.
@@ -1720,24 +1746,38 @@ export function TaskDependencyGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Whole-board schedule rollup for the toolbar badge below — the latest
-  // dueDate currently on this board vs. the latest REAL projected finish
-  // (CPM-cascaded) among grounded tasks. Distinct concepts: plannedCompletion
-  // is just "what everyone originally committed to"; projectedCompletion is
-  // "given every actual date entered so far, when does the last task in the
-  // chain actually land" — the two only diverge once something's delayed.
-  const { plannedCompletion, projectedCompletion } = useMemo(() => {
-    const dueDates = tasks.map((t) => t.dueDate).filter((d): d is Date => !!d);
-    const projectedDates = tasks
-      .filter((t) => groundedSet.has(t.id))
-      .map((t) => delayById[t.id]?.projectedFinish)
-      .filter((d): d is Date => !!d);
-    return {
-      plannedCompletion: dueDates.length > 0 ? dueDates.reduce((a, b) => (a > b ? a : b)) : null,
-      projectedCompletion: projectedDates.length > 0 ? projectedDates.reduce((a, b) => (a > b ? a : b)) : null,
-    };
+  // Per-PHASE schedule rollup for the toolbar badges below — one entry per
+  // PHASE_SECTIONS range that actually has visible tasks right now (a phase
+  // with nothing on it yet, e.g. Structure Internal Works right after its
+  // tasks were cleared out, simply has no badge until real tasks exist there
+  // again). plannedCompletion is just "what everyone in this phase
+  // originally committed to"; projectedCompletion is "given every actual
+  // date entered so far, when does the last task in THIS phase's chain
+  // actually land" — the two only diverge once something in that phase is
+  // delayed. Deliberately per-phase, not one whole-board number — "Civil"
+  // and a later "Structure Internal Works"/"External Works" phase are
+  // different questions a client asks separately, not one merged answer.
+  const phaseCompletions = useMemo(() => {
+    return PHASE_SECTIONS.map((section) => {
+      const sectionTasks = tasks.filter((t) => {
+        const col = taskIdColumnNumber(t.taskId);
+        return col >= section.minCol && col <= section.maxCol;
+      });
+      const dueDates = sectionTasks.map((t) => t.dueDate).filter((d): d is Date => !!d);
+      const projectedDates = sectionTasks
+        .filter((t) => groundedSet.has(t.id))
+        .map((t) => delayById[t.id]?.projectedFinish)
+        .filter((d): d is Date => !!d);
+      const plannedCompletion = dueDates.length > 0 ? dueDates.reduce((a, b) => (a > b ? a : b)) : null;
+      const projectedCompletion = projectedDates.length > 0 ? projectedDates.reduce((a, b) => (a > b ? a : b)) : null;
+      return {
+        label: section.label,
+        plannedCompletion,
+        projectedCompletion,
+        isDelayed: !!(plannedCompletion && projectedCompletion && projectedCompletion > plannedCompletion),
+      };
+    }).filter((s) => s.projectedCompletion !== null);
   }, [tasks, delayById, groundedSet]);
-  const boardIsDelayed = !!(plannedCompletion && projectedCompletion && projectedCompletion > plannedCompletion);
 
   const graphActionsValue = useMemo(
     (): GraphActions => ({
@@ -2502,31 +2542,37 @@ export function TaskDependencyGraph({
         />
       )}
 
-      {/* Whole-board projected completion — the latest CPM-projected finish
-          across every grounded task currently on the canvas, given every
-          actual date entered so far. Always visible (not gated by
-          selection/zoom) since this is the one summary number that answers
-          "given what's actually happened so far, when does this all really
-          finish" without opening a single task. Colored the same way the
-          client report's own Schedule Summary treats a delayed vs. on-time
-          project, so the two never read as contradicting each other. */}
-      {projectedCompletion && (
-        <div
-          className="absolute top-3 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11.5px] font-semibold shadow-sm"
-          style={boardIsDelayed
-            ? { borderColor: '#FECACA', background: '#FEF2F2', color: '#B91C1C' }
-            : { borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
-          title={boardIsDelayed && plannedCompletion
-            ? `Originally planned to finish ${formatCardDate(plannedCompletion)} — pushed out by current delays`
-            : 'Latest projected finish across every task on this board'}
-        >
-          {boardIsDelayed && (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
-          )}
-          Projected Completion: {formatCardDate(projectedCompletion)}
+      {/* Per-phase projected completion — one badge per PHASE_SECTIONS range
+          that currently has real tasks (Civil today; Structure Internal
+          Works / External Works once tasks exist there again), each the
+          latest CPM-projected finish among THAT phase's own grounded tasks.
+          Always visible (not gated by selection/zoom) since this answers
+          "given what's actually happened so far, when does THIS phase
+          really finish" without opening a single task. Colored the same way
+          the client report's own Schedule Summary treats a delayed vs.
+          on-time project, so the two never read as contradicting each other. */}
+      {phaseCompletions.length > 0 && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 flex-wrap justify-center" style={{ maxWidth: '70%' }}>
+          {phaseCompletions.map((phase) => (
+            <div
+              key={phase.label}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11.5px] font-semibold shadow-sm whitespace-nowrap"
+              style={phase.isDelayed
+                ? { borderColor: '#FECACA', background: '#FEF2F2', color: '#B91C1C' }
+                : { borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
+              title={phase.isDelayed && phase.plannedCompletion
+                ? `${phase.label}: originally planned to finish ${formatCardDate(phase.plannedCompletion)} — pushed out by current delays`
+                : `${phase.label}: latest projected finish among this phase's own tasks`}
+            >
+              {phase.isDelayed && (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              )}
+              {phase.label}: {formatCardDate(phase.projectedCompletion)}
+            </div>
+          ))}
         </div>
       )}
 
