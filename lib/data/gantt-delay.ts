@@ -103,7 +103,7 @@ export async function getGanttDelayData(): Promise<GanttDelayData> {
     type: d.type,
   }));
 
-  const delays = computeProjectDelays(engineTasks, engineDeps, blockedDates);
+  const delays = computeProjectDelays(engineTasks, engineDeps, blockedDates, new Date());
   const groundedIds = computeGroundedIds(engineTasks, engineDeps);
 
   const delayById: Record<string, TaskDelayInfo> = {};

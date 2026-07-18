@@ -82,7 +82,7 @@ export async function getTaskScheduleImpact(taskId: string): Promise<TaskSchedul
     type: d.type,
   }));
 
-  const delays = computeProjectDelays(engineTasks, engineDeps, blockedDates);
+  const delays = computeProjectDelays(engineTasks, engineDeps, blockedDates, new Date());
   const info = delays.get(taskId);
   if (!info) return null;
 

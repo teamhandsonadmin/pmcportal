@@ -396,21 +396,26 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
       )}
 
       {showDates && (
-        delay ? (
+        <>
+          {/* Planned dates — always shown, delayed or not, and above the red
+              delay pill (not the other way around): a delay doesn't erase
+              what was originally committed to, it's additional information
+              layered below the plan it's measured against. */}
           <div
-            className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
-            style={{ background: '#FEE2E2', color: '#B91C1C' }}
-          >
-            {formatCardDate(data.dueDate)} → +{delay.totalDelayDays}d → {formatCardDate(delay.projectedFinish)}
-          </div>
-        ) : (
-          <div
-            className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
-            style={{ background: '#FEF08A', color: '#854D0E' }}
+            className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
+            style={{ top: -50, background: '#FEF08A', color: '#854D0E' }}
           >
             {formatCardDateRange(data.plannedStartDate, data.dueDate)}
           </div>
-        )
+          {delay && (
+            <div
+              className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
+              style={{ background: '#FEE2E2', color: '#B91C1C' }}
+            >
+              +{delay.totalDelayDays}d → {formatCardDate(delay.projectedFinish)}
+            </div>
+          )}
+        </>
       )}
 
       {/* Always visible regardless of zoom (unlike the pill above, which is

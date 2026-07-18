@@ -113,12 +113,15 @@ function pickDrivingPrerequisite(
   return driving;
 }
 
-// Pure function: no I/O, no Date.now()/wall-clock dependence — same inputs
-// always produce the same outputs, deterministically, including tie-breaks.
+// Pure function: no I/O, no internal Date.now()/new Date() — `today` is an
+// explicit input instead, so the same four inputs always produce the same
+// output, deterministically (including tie-breaks); callers pass their own
+// wall-clock read (see lib/data/gantt-delay.ts, lib/data/delay-engine.ts).
 export function computeProjectDelays(
   tasks: DelayEngineTaskInput[],
   dependencies: DelayEngineDependency[],
-  blockedDates: Set<string>
+  blockedDates: Set<string>,
+  today: Date
 ): Map<string, TaskDelayInfo> {
   const taskMap = new Map(tasks.map((t) => [t.taskId, t]));
 
@@ -328,7 +331,21 @@ export function computeProjectDelays(
       // re-constrain EF.
     }
     const efWinner = maxCandidate(efCandidates); // always ≥1 entry (selfDerivedFinish)
-    const projectedFinish = efWinner.value;
+    let projectedFinish = efWinner.value;
+
+    // A not-yet-completed task that's already past its own projected finish
+    // as of `today` hasn't actually finished — whatever the plan/dependency
+    // math above worked out to, the earliest it could genuinely be
+    // considered done is today (or the next working day, if today isn't
+    // one). Without this, a task just sitting untouched past its due date
+    // — still "Pending," nothing recorded — shows zero delay until someone
+    // eventually marks it completed with a late actual finish. This is what
+    // makes "overdue and still not done" show up as delayed immediately,
+    // and cascade to every downstream task exactly like an explicit late
+    // actual finish already does.
+    if (today > projectedFinish) {
+      projectedFinish = addWorkingDaysSync(today, 1, blockedDates);
+    }
 
     const inheritedDelayDays = task.plannedStartDate
       ? workingDayGap(task.plannedStartDate, projectedStart, blockedDates)
