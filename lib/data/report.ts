@@ -88,6 +88,11 @@ export interface ProjectReportData {
   projectName: string;
   asOfLabel: string;
   rangeLabel: string | null;
+  // Which Work this report was generated for, or null for the whole project
+  // (every Work combined) — set from the `work` query param, distinct from
+  // rangeLabel's date scoping so the header can show both independently
+  // ("Civil Works — Jul 8 to Jul 17" vs. just one or the other).
+  scopedWorkName: string | null;
   progress: ReportProgressBreakdown;
   overdueCount: number;
   workBreakdown: ReportWorkBreakdown[];
@@ -136,14 +141,22 @@ export function upcomingDateLabel(date: Date, today: Date): string {
 // breakdown, schedule summary, upcoming list, and the Gantt view below it) to
 // tasks planned to start within [from, to] — one consistent "generate the
 // report for this window" filter rather than each section picking its own
-// notion of what's in range.
-export async function getProjectReportData(projectId: string, range?: ReportDateRange): Promise<ProjectReportData | null> {
-  const [project, tasks, sft] = await Promise.all([
+// notion of what's in range. `workId`, when given, narrows the same report
+// to just that one Work/trade (e.g. "generate a report for Civil Works
+// only") — combines with `range` rather than replacing it.
+export async function getProjectReportData(
+  projectId: string,
+  range?: ReportDateRange,
+  workId?: string
+): Promise<ProjectReportData | null> {
+  const [project, scopedWork, tasks, sft] = await Promise.all([
     prisma.project.findUnique({ where: { id: projectId }, select: { name: true, reportSentAt: true } }),
+    workId ? prisma.work.findUnique({ where: { id: workId }, select: { name: true } }) : Promise.resolve(null),
     prisma.hvacTask.findMany({
       where: {
         work: { projectId },
         deletedAt: null,
+        ...(workId ? { workId } : {}),
         ...(range ? { plannedStartDate: { gte: range.from, lte: range.to } } : {}),
       },
       select: {
@@ -291,6 +304,7 @@ export async function getProjectReportData(projectId: string, range?: ReportDate
     projectId,
     projectName: project.name,
     rangeLabel,
+    scopedWorkName: scopedWork?.name ?? null,
     workBreakdown,
     asOfLabel: format(new Date(), 'MMMM d, yyyy'),
     progress: { completed, inProgress, notStarted, total, completedPct, inProgressPct, notStartedPct },
@@ -301,6 +315,19 @@ export async function getProjectReportData(projectId: string, range?: ReportDate
     ganttWorks: [...ganttByWork.values()],
     reportSentAt: project.reportSentAt,
   };
+}
+
+// Options for the report's "generate for just one trade" picker — only
+// Works that actually have at least one task, so the dropdown doesn't fill
+// up with trades that would just produce an empty report (this project has
+// 16 Works defined but only Civil Works has any real tasks yet).
+export async function getProjectWorkOptions(projectId: string): Promise<{ id: string; name: string }[]> {
+  const works = await prisma.work.findMany({
+    where: { projectId, tasks: { some: { deletedAt: null } } },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  });
+  return works;
 }
 
 // The client(s) linked to a project — no existing query does this anywhere

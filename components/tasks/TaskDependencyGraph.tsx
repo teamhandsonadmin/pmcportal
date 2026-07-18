@@ -205,6 +205,31 @@ function formatCardDateRange(start: Date | null, due: Date | null): string {
   return 'No planned dates';
 }
 
+interface TaskDelayDisplay {
+  overdueDays: number;
+  projectedDate: Date;
+}
+
+// Same simple calendar-day rule the client report uses for its own per-task
+// lateness (lib/data/report.ts's overdueDaysByTaskId) — NOT the internal
+// Gantt's working-day/CPM schedule-impact engine. Deliberately consistent
+// with the report rather than the Gantt's numbers, since this is exactly
+// the "planned date -> delay -> projected date" view a client sees there
+// too; showing a different day-count here would read as contradictory data
+// about the very same task.
+function computeTaskDelay(dueDate: Date | null, status: TaskStatus): TaskDelayDisplay | null {
+  if (!dueDate || status === 'completed') return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  const overdueDays = Math.round((today.getTime() - due.getTime()) / 86_400_000);
+  if (overdueDays <= 0) return null;
+  const projectedDate = new Date(due);
+  projectedDate.setDate(projectedDate.getDate() + overdueDays);
+  return { overdueDays, projectedDate };
+}
+
 // Several actions (createTaskFromCanvas, updateTaskPlannedDates, ...) can
 // fail with EITHER a plain string OR a Zod-style field-errors object (e.g.
 // { due_date: ['Due date must be on or after the planned start date'] }) —
@@ -290,6 +315,7 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
   // Selector resolves to a boolean, not the raw zoom level, so this only
   // re-renders nodes when crossing the threshold — not on every zoom tick.
   const showDates = useStore((s) => s.transform[2] >= DATE_VISIBLE_ZOOM_THRESHOLD);
+  const delay = computeTaskDelay(data.dueDate, data.status);
 
   return (
     <div
@@ -370,12 +396,50 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
       )}
 
       {showDates && (
-        <div
-          className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
-          style={{ background: '#FEF08A', color: '#854D0E' }}
-        >
-          {formatCardDateRange(data.plannedStartDate, data.dueDate)}
-        </div>
+        delay ? (
+          <div
+            className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
+            style={{ background: '#FEE2E2', color: '#B91C1C' }}
+          >
+            {formatCardDate(data.dueDate)} → +{delay.overdueDays}d → {formatCardDate(delay.projectedDate)}
+          </div>
+        ) : (
+          <div
+            className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
+            style={{ background: '#FEF08A', color: '#854D0E' }}
+          >
+            {formatCardDateRange(data.plannedStartDate, data.dueDate)}
+          </div>
+        )
+      )}
+
+      {/* Always visible regardless of zoom (unlike the pill above, which is
+          zoom-gated) — a schedule slip is exactly the kind of signal that
+          shouldn't disappear just because the canvas is zoomed out. Mirrors
+          the delete button's corner-badge treatment on the opposite side. */}
+      {delay && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                className="absolute -top-2 -left-2 w-5 h-5 rounded-full border-2 border-white shadow-sm flex items-center justify-center z-10"
+                style={{ backgroundColor: '#DC2626' }}
+                title={`Delayed ${delay.overdueDays} day${delay.overdueDays === 1 ? '' : 's'}`}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round">
+                  <line x1="12" y1="7" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </button>
+            }
+          />
+          <TooltipContent side="top" className="p-2.5">
+            <p className="text-[11.5px] font-bold text-white">Delayed {delay.overdueDays} day{delay.overdueDays === 1 ? '' : 's'}</p>
+            <p className="text-[11px] text-gray-300 mt-1">Planned: {formatCardDate(data.dueDate)}</p>
+            <p className="text-[11px] text-gray-300">Projected: {formatCardDate(delay.projectedDate)}</p>
+          </TooltipContent>
+        </Tooltip>
       )}
 
       <p className="text-[9.5px] font-mono font-semibold text-muted-foreground/70 leading-tight">{data.taskId}</p>

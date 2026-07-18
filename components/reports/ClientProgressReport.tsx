@@ -257,7 +257,7 @@ export function ClientProgressReport({ data }: { data: ProjectReportData }) {
       <div>
         <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">{data.projectName}</h1>
         <p className="text-[13.5px] text-gray-500 mt-1">
-          Progress report — {data.rangeLabel ? data.rangeLabel : `as of ${data.asOfLabel}`}
+          {data.scopedWorkName ? `${data.scopedWorkName} — ` : ''}Progress report — {data.rangeLabel ? data.rangeLabel : `as of ${data.asOfLabel}`}
         </p>
       </div>
 
@@ -271,10 +271,14 @@ export function ClientProgressReport({ data }: { data: ProjectReportData }) {
         <ProgressPie progress={data.progress} />
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-200 p-6" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <SectionTitle>Progress By Work</SectionTitle>
-        <WorkBreakdownList workBreakdown={data.workBreakdown} />
-      </div>
+      {/* Redundant once the report is already scoped to a single Work — it'd
+          just repeat the Overall Progress pie above with an extra step. */}
+      {data.workBreakdown.length > 1 && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-6" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+          <SectionTitle>Progress By Work</SectionTitle>
+          <WorkBreakdownList workBreakdown={data.workBreakdown} />
+        </div>
+      )}
 
       {data.schedule && (
         <div className="bg-white rounded-2xl border border-gray-200 p-6" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>

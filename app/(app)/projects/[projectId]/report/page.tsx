@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getProjectReportData, getProjectClients, type ReportDateRange } from '@/lib/data/report';
+import { getProjectReportData, getProjectClients, getProjectWorkOptions, type ReportDateRange } from '@/lib/data/report';
 import { ClientProgressReport } from '@/components/reports/ClientProgressReport';
 import { SendToClientButton } from '@/components/reports/SendToClientButton';
 import { ReportDateRangePicker } from '@/components/reports/ReportDateRangePicker';
@@ -26,20 +26,29 @@ export default async function ProjectReportPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; work?: string }>;
 }) {
   const { projectId } = await params;
-  const { from: fromParam, to: toParam } = await searchParams;
+  const { from: fromParam, to: toParam, work: workParam } = await searchParams;
 
   const from = parseDateParam(fromParam, false);
   const to = parseDateParam(toParam, true);
   const range: ReportDateRange | undefined = (from && to && from <= to) ? { from, to } : undefined;
 
-  const [data, clients] = await Promise.all([
-    getProjectReportData(projectId, range),
+  const [data, clients, workOptions] = await Promise.all([
+    getProjectReportData(projectId, range, workParam || undefined),
     getProjectClients(projectId),
+    getProjectWorkOptions(projectId),
   ]);
   if (!data) notFound();
+
+  // A work param naming a Work that either doesn't exist or has no tasks
+  // (e.g. a stale/hand-edited URL) silently falls back to "All Works" in
+  // the data layer (scopedWorkName just comes back null) — only treat the
+  // param as "really selected" for the picker's own default if it's one of
+  // the real, selectable options, so the dropdown doesn't show a phantom
+  // selection that doesn't match what the report actually generated.
+  const validWorkId = workParam && workOptions.some((w) => w.id === workParam) ? workParam : null;
 
   return (
     <div className="space-y-5">
@@ -59,6 +68,8 @@ export default async function ProjectReportPage({
         projectId={projectId}
         initialFrom={range ? fromParam ?? null : null}
         initialTo={range ? toParam ?? null : null}
+        workOptions={workOptions}
+        initialWorkId={validWorkId}
       />
 
       <ClientProgressReport data={data} />
