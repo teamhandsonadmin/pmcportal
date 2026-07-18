@@ -54,11 +54,11 @@ async function seedUsers() {
 }
 
 async function seedProjectAndWorks() {
-  let project = await prisma.project.findFirst({ where: { name: 'ABC Villa Construction' } });
+  let project = await prisma.project.findFirst({ where: { name: 'ROAST @ Kokapet' } });
   if (!project) {
     project = await prisma.project.create({
       data: {
-        name: 'ABC Villa Construction',
+        name: 'ROAST @ Kokapet',
         address: '14 Palm Grove Avenue, Bengaluru',
         area: '4,200 sq.ft',
         budget: '₹2.4 Cr',

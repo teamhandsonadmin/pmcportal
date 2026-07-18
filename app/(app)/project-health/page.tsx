@@ -123,7 +123,7 @@ export default function ProjectHealthPage() {
 
       <div>
         <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">Project Health</h1>
-        <p className="text-[13.5px] text-gray-500 mt-1">Real-time performance monitoring and KPI health for ABC Villa Construction.</p>
+        <p className="text-[13.5px] text-gray-500 mt-1">Real-time performance monitoring and KPI health for ROAST @ Kokapet.</p>
       </div>
 
       <section className="space-y-5">

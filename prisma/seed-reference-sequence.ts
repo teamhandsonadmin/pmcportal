@@ -27,7 +27,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-const DEMO_PROJECT_NAME = 'ABC Villa Construction';
+const DEMO_PROJECT_NAME = 'ROAST @ Kokapet';
 
 // ── Additional Works beyond the 6 already created ──────────────────────
 // These trade codes (PAINT, MODULAR, ALU.D&W, GLASS, LIGHT.V) appear in the

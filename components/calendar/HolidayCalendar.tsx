@@ -250,7 +250,7 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">Holiday Calendar</h1>
-          <p className="text-[13.5px] text-gray-500 mt-1">Configure holidays and working schedule for ABC Villa Construction.</p>
+          <p className="text-[13.5px] text-gray-500 mt-1">Configure holidays and working schedule for ROAST @ Kokapet.</p>
         </div>
         <div className="flex items-center gap-2.5">
           <div className="flex rounded-lg border border-gray-200 overflow-hidden bg-white"
