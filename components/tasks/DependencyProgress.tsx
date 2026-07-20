@@ -8,6 +8,7 @@ const CATEGORY_LABELS: Record<DependencyCategory, string> = {
   contractor: 'Contractor',
   inspector:  'Inspector',
   procurement: 'Procurement',
+  quantity:   'Quantity',
 };
 
 interface DependencyProgressProps {

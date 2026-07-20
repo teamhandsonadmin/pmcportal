@@ -113,6 +113,8 @@ export interface GraphTask {
   manualPositionY: number | null;
   prerequisiteCount: number;
   prerequisiteCompletedCount: number;
+  checklistTotal: number;
+  checklistDone: number;
 }
 
 export interface GraphEdgeInput {
@@ -393,11 +395,11 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
       <NodeToolbar
         isVisible={(selected || actions.hoveredNodeId === id) && !actions.locked}
         position={Position.Top}
-        // Cleared to sit above both of this node's own floating pills (see
-        // their own offsets just below) instead of the default 10 — at 10 it
-        // used to land right in the middle of that stack whenever a node was
-        // both selected/hovered and zoomed in enough to show dates.
-        offset={64}
+        // Cleared to sit above all three of this node's own floating pills
+        // (see their own offsets just below) instead of the default 10 — at
+        // 10 it used to land right in the middle of that stack whenever a
+        // node was both selected/hovered and zoomed in enough to show dates.
+        offset={84}
       >
         <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-md p-1">
           <button type="button" onClick={() => actions.onOpenTask(id)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500" title="Open task">
@@ -447,8 +449,8 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
                 // that distinction visible on the canvas instead of both
                 // looking like the same kind of red pill.
                 ownDelay !== null
-                  ? { top: -38, background: '#FEE2E2', color: '#B91C1C', border: '1.5px solid #000000' }
-                  : { top: -38, background: '#FEE2E2', color: '#B91C1C' }
+                  ? { top: -18, background: '#FEE2E2', color: '#B91C1C', border: '1.5px solid #000000' }
+                  : { top: -18, background: '#FEE2E2', color: '#B91C1C' }
               }
               title={ownDelay !== null ? 'Own delay — actual date recorded on this task' : 'Cascaded delay — inherited from an upstream task'}
             >
@@ -457,10 +459,23 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
           )}
           <div
             className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
-            style={{ top: -18, background: '#FEF08A', color: '#854D0E' }}
+            style={{ top: -38, background: '#FEF08A', color: '#854D0E' }}
           >
             {formatCardDateRange(data.plannedStartDate, data.dueDate)}
           </div>
+          {data.checklistTotal > 0 && (
+            <div
+              className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
+              style={
+                data.checklistDone === data.checklistTotal
+                  ? { top: -58, background: '#DCFCE7', color: '#15803D' }
+                  : { top: -58, background: '#E2E8F0', color: '#334155' }
+              }
+              title={`Checklist: ${data.checklistDone} of ${data.checklistTotal} items done`}
+            >
+              {data.checklistDone} of {data.checklistTotal} done
+            </div>
+          )}
         </>
       )}
 
@@ -1593,6 +1608,8 @@ export function TaskDependencyGraph({
             manualPositionY: null,
             prerequisiteCount: 0,
             prerequisiteCompletedCount: 0,
+            checklistTotal: 0,
+            checklistDone: 0,
           } as unknown as NodeData,
         },
       ]);
@@ -2442,6 +2459,8 @@ export function TaskDependencyGraph({
           manualPositionY: createForm.position.y,
           prerequisiteCount: 0,
           prerequisiteCompletedCount: 0,
+          checklistTotal: 0,
+          checklistDone: 0,
         } as NodeData,
       },
     ]);

@@ -4,7 +4,7 @@ import { DependencyChecklist } from '@/components/tasks/DependencyChecklist';
 import { isLocked } from '@/lib/utils/status-rules';
 import type { DependencyCategory, DependencyItem } from '@/lib/types/tasks';
 
-const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'procurement'];
+const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'procurement', 'quantity'];
 
 interface Props {
   params: Promise<{ taskId: string }>;

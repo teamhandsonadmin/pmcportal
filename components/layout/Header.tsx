@@ -4,8 +4,16 @@ import { useState, useRef, useEffect } from 'react';
 import { getNotificationsPanelData } from '@/app/actions/notifications';
 import { STATUS_CHIP } from '@/components/tasks/StatusDropdown';
 import type { NeedsAttentionItem, UpcomingTaskItem } from '@/lib/data/notifications';
+import type { CurrentUserProfile } from '@/lib/auth/current-user';
 
 type Tab = 'attention' | 'upcoming';
+
+// "Chandraprakash" -> "C", "Jane Doe" -> "JD" — first letter of up to the
+// first two words, same idea as most avatar-initial conventions elsewhere.
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || '?';
+}
 
 function NeedsAttentionRow({ item }: { item: NeedsAttentionItem }) {
   const chip = STATUS_CHIP[item.status];
@@ -43,7 +51,7 @@ function UpcomingTaskRow({ item }: { item: UpcomingTaskItem }) {
   );
 }
 
-export function Header() {
+export function Header({ currentUser }: { currentUser: CurrentUserProfile | null }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('attention');
   const [needsAttention, setNeedsAttention] = useState<NeedsAttentionItem[]>([]);
@@ -181,11 +189,11 @@ export function Header() {
         {/* User profile */}
         <div className="flex items-center gap-3 cursor-pointer group">
           <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
-            AD
+            {currentUser ? initialsFor(currentUser.fullName) : '?'}
           </div>
           <div className="hidden sm:block">
-            <div className="text-[13px] font-semibold text-foreground leading-tight">Admin</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">teamhandsonadmin@gmail.com</div>
+            <div className="text-[13px] font-semibold text-foreground leading-tight">{currentUser?.fullName ?? 'Unknown user'}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">{currentUser?.email ?? '—'}</div>
           </div>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/50 hidden sm:block">
             <path d="M6 9l6 6 6-6"/>

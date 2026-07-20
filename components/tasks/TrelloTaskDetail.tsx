@@ -21,6 +21,7 @@ const CAT_LABEL: Record<DependencyCategory, string> = {
   contractor: 'Contractor',
   inspector: 'Vendor',
   procurement: 'Procurement',
+  quantity: 'Quantity',
 };
 const CAT_LETTER: Record<DependencyCategory, string> = {
   architect: 'A',
@@ -29,6 +30,7 @@ const CAT_LETTER: Record<DependencyCategory, string> = {
   contractor: 'Cr',
   inspector: 'V',
   procurement: 'P',
+  quantity: 'Q',
 };
 function catConfig(category: DependencyCategory) {
   const c = CATEGORY_COLORS[category];

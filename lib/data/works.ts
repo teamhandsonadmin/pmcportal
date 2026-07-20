@@ -117,6 +117,14 @@ export async function getWorksData() {
     const done = t.dependencyItems.filter((i) => isItemDone(i.completion?.status as never)).length;
     const progressPct = total > 0 ? Math.round((done / total) * 100) : 0;
 
+    // Flowchart's own checklist-progress pill only ever tracks the Quantity
+    // category — a narrower, task-specific counter, not the same thing as
+    // progressPct above (every category, used by the Gantt/list-view health
+    // indicators, which stays as-is).
+    const quantityItems = t.dependencyItems.filter((i) => i.category === 'quantity');
+    const quantityTotal = quantityItems.length;
+    const quantityDone = quantityItems.filter((i) => isItemDone(i.completion?.status as never)).length;
+
     // A completion row is created lazily (see DependencyCompletion's own
     // schema comment) — an item with none yet defaults to PENDING, same
     // fallback the checklist UI itself already uses.
@@ -151,6 +159,8 @@ export async function getWorksData() {
       manualPositionX: t.manualPositionX,
       manualPositionY: t.manualPositionY,
       checklistItems,
+      checklistTotal: quantityTotal,
+      checklistDone: quantityDone,
       worstChecklistStatus: worstChecklistStatus(checklistItems.map((i) => i.status)),
       prerequisiteCount: startGatingDepsByTask.get(t.id)?.length ?? 0,
       prerequisiteCompletedCount: (startGatingDepsByTask.get(t.id) ?? [])

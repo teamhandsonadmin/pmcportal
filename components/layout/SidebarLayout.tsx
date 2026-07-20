@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import type { CurrentUserProfile } from '@/lib/auth/current-user';
 
-export function SidebarLayout({ children }: { children: React.ReactNode }) {
+export function SidebarLayout({ children, currentUser }: { children: React.ReactNode; currentUser: CurrentUserProfile | null }) {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
         className="flex-1 flex flex-col min-h-screen transition-all duration-300"
         style={{ marginLeft: collapsed ? '52px' : '232px' }}
       >
-        <Header />
+        <Header currentUser={currentUser} />
         <main className="flex-1 p-7">{children}</main>
       </div>
     </div>

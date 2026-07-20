@@ -40,6 +40,8 @@ export interface TaskRow {
   // aggregate progressPct above) — powers the Gantt chart's checklist-health
   // indicator + hover tooltip (see lib/utils/checklist-health.ts).
   checklistItems: { category: DependencyCategory; itemLabel: string; status: CompletionStatus }[];
+  checklistTotal: number;
+  checklistDone: number;
   worstChecklistStatus: CompletionStatus | null;
   prerequisiteCount: number;
   prerequisiteCompletedCount: number;
@@ -190,6 +192,8 @@ export function TasksExplorer({
         manualPositionY: r.manualPositionY,
         prerequisiteCount: r.prerequisiteCount,
         prerequisiteCompletedCount: r.prerequisiteCompletedCount,
+        checklistTotal: r.checklistTotal,
+        checklistDone: r.checklistDone,
       })),
     [filtered]
   );

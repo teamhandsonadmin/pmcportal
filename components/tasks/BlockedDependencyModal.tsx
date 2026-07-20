@@ -12,6 +12,7 @@ const CATEGORY_LABEL: Record<DependencyCategory, string> = {
   contractor: 'Contractor',
   inspector: 'Vendor',
   procurement: 'Procurement',
+  quantity: 'Quantity',
 };
 
 interface BlockedDependencyModalProps {

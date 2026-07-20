@@ -122,6 +122,7 @@ const SECTIONS = [
           { label: 'Flowchart', href: '/works/flowchart' },
           { label: 'Gantt Chart', href: '/gantt' },
           { label: 'Comments', href: '/works/comments' },
+          { label: 'Checklist Management', href: '/works/checklists' },
         ],
       },
       { label: 'Inventory',               href: '/inventory',   icon: Icons.Inventory,     exact: false, badge: 0, disabled: true },

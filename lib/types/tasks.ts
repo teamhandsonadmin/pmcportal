@@ -25,7 +25,8 @@ export type DependencyCategory =
   | 'consultant'
   | 'contractor'
   | 'inspector'
-  | 'procurement';
+  | 'procurement'
+  | 'quantity';
 
 export type CompletionStatus = 'YES' | 'NO' | 'ON_HOLD' | 'PENDING' | 'REVISIONS' | 'PROCEED';
 
@@ -52,6 +53,7 @@ export const CATEGORY_COLORS: Record<DependencyCategory, {
   contractor: { border: '#7C3AED', bg: '#F5F3FF', text: '#6D28D9', badge: '#DDD6FE', dot: '#8B5CF6' },
   inspector:  { border: '#0891B2', bg: '#ECFEFF', text: '#0E7490', badge: '#CFFAFE', dot: '#06B6D4' },
   procurement: { border: '#B45309', bg: '#FFF7ED', text: '#9A3412', badge: '#FED7AA', dot: '#F97316' },
+  quantity:   { border: '#BE185D', bg: '#FDF2F8', text: '#9D174D', badge: '#FBCFE8', dot: '#EC4899' },
 };
 
 export interface Work {

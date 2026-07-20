@@ -47,6 +47,7 @@ enum DependencyCategory {
   contractor
   inspector
   procurement
+  quantity
 }
 
 enum CompletionStatus {
