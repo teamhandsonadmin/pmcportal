@@ -2,7 +2,8 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import type { ActionResult } from '@/lib/types/hvac';
+import { cascadePlannedDatesFromActualDelay } from '@/app/actions/tasks';
+import type { ActionResult } from '@/lib/types/tasks';
 
 // Symmetric, non-blocking link — deliberately never read by updateTaskStatus,
 // the delay engine, or any other gating logic anywhere in the app. See
@@ -52,6 +53,15 @@ export async function createParallelLink(taskAId: string, taskBId: string): Prom
       payload: { taskAId, taskBId },
     },
   }).catch(() => {});
+
+  // Whichever side (if either) is already running late mirrors that delay
+  // onto its new partner immediately — checked both ways since the link is
+  // symmetric and either task could be the delayed one. No-ops harmlessly
+  // for whichever side has no delay of its own to propagate.
+  await Promise.all([
+    cascadePlannedDatesFromActualDelay(taskAId).catch(() => {}),
+    cascadePlannedDatesFromActualDelay(taskBId).catch(() => {}),
+  ]);
 
   await revalidateTaskFamily(taskAId, taskBId);
   return { success: true };

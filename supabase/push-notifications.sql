@@ -65,7 +65,7 @@ BEGIN
   SELECT w.project_id, di.item_label, ht.task_name
     INTO v_project_id, v_item_label, v_task_name
   FROM dependency_items di
-  JOIN hvac_tasks ht ON ht.id = di.task_id
+  JOIN tasks ht ON ht.id = di.task_id
   JOIN works w ON w.id = ht.work_id
   WHERE di.id = p_item_id AND di.category = 'client';
 

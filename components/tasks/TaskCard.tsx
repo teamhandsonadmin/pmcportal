@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { TaskStatusBadge } from './TaskStatusBadge';
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus } from '@/lib/types/tasks';
 import { formatDate, isOverdue } from '@/lib/utils/format';
 
 interface TaskCardData {

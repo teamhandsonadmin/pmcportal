@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { uploadAndExtractInvoice, confirmInventoryIntake } from '@/app/actions/inventory-ocr';
 import { INVENTORY_UNITS } from '@/lib/validations/inventory';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 import type { UploadExtractResult } from '@/app/actions/inventory-ocr';
 
 interface ExistingItem {

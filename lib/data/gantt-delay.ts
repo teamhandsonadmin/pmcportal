@@ -69,7 +69,7 @@ function computeGroundedIds(
 // draw bars, not just one task's.
 export async function getGanttDelayData(): Promise<GanttDelayData> {
   const [tasks, deps] = await Promise.all([
-    prisma.hvacTask.findMany({
+    prisma.task.findMany({
       select: {
         id: true, plannedStartDate: true, dueDate: true,
         actualStartDate: true, actualEndDate: true, status: true,

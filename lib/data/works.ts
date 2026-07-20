@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import type { ActivityEvent, DashboardStats } from '@/lib/types/hvac';
-import { isItemDone } from '@/lib/types/hvac';
+import type { ActivityEvent, DashboardStats } from '@/lib/types/tasks';
+import { isItemDone } from '@/lib/types/tasks';
 import { isOverdue } from '@/lib/utils/format';
 import { isDependencySatisfied, type PrerequisiteTask } from '@/lib/utils/status-rules';
 import { worstChecklistStatus } from '@/lib/utils/checklist-health';
@@ -22,7 +22,7 @@ export interface WorkBreakdown {
 
 export async function getWorksData() {
   const [tasks, works, users, deps, parallelLinks, recentActivityRaw] = await Promise.all([
-    prisma.hvacTask.findMany({
+    prisma.task.findMany({
       include: {
         // category/itemLabel are read by the Gantt chart's checklist-health
         // indicator/tooltip (see lib/utils/checklist-health.ts) — the status
@@ -138,6 +138,9 @@ export async function getWorksData() {
       dueDate: t.dueDate,
       actualStartDate: t.actualStartDate,
       actualEndDate: t.actualEndDate,
+      currentPlannedStartDate: t.currentPlannedStartDate,
+      currentDueDate: t.currentDueDate,
+      cascadeDelayDays: t.cascadeDelayDays,
       progressPct,
       overdue: isOverdue(t.dueDate) && t.status !== 'completed',
       assigneeName: t.assignedTo ? userMap.get(t.assignedTo) ?? null : null,

@@ -1,6 +1,11 @@
 -- ============================================================
--- HVAC Workflow Module — Postgres-level business logic
+-- Task Workflow Module — Postgres-level business logic
 -- ============================================================
+-- Named "HVAC Workflow Module" until this app's task rename pass — this
+-- logic was never HVAC-trade-specific, it applies to every task regardless
+-- of trade, so the old header was misleading on its own terms even before
+-- the table itself was renamed (hvac_tasks -> tasks).
+--
 -- Tables, enums, indexes, and foreign keys are managed by Prisma
 -- (see prisma/schema.prisma, applied via `npx prisma db push`).
 -- This file only holds logic Prisma cannot express: the DB-authoritative
@@ -8,10 +13,11 @@
 -- `npx prisma db execute --file supabase/schema.sql`) whenever it changes;
 -- it is safe to re-run (everything is CREATE OR REPLACE / DROP IF EXISTS).
 --
--- Note: the app connects to Postgres directly via Prisma (DATABASE_URL),
--- not through Supabase's PostgREST/RLS layer, so Row Level Security
--- policies are not part of this app's data path and are intentionally
--- not defined here.
+-- Note: admin-web itself connects to Postgres directly via Prisma
+-- (DATABASE_URL), not through Supabase's PostgREST/RLS layer, so RLS is
+-- intentionally not defined HERE. That does NOT mean this database has no
+-- RLS at all, though — the mobile app's client-portal role does go through
+-- PostgREST, and its policies live in supabase/rls-policies.sql instead.
 -- ============================================================
 
 -- ── Status recalculation ──────────────────────────────────────
@@ -20,7 +26,7 @@
 -- — NO / ON_HOLD / PENDING / REVISIONS all block), and falls back to
 -- "blocked" if it regresses. Tasks with fewer than 6 categories seeded
 -- stay in "draft". in_progress / on_hold / completed are never touched here
--- — those are user-driven transitions (see app/actions/hvac-tasks.ts).
+-- — those are user-driven transitions (see app/actions/tasks.ts).
 CREATE OR REPLACE FUNCTION recalculate_task_status(p_task_id UUID)
 RETURNS void AS $$
 DECLARE
@@ -28,7 +34,7 @@ DECLARE
   v_cat_count    INTEGER;
   v_all_complete BOOLEAN;
 BEGIN
-  SELECT status INTO v_status FROM hvac_tasks WHERE id = p_task_id;
+  SELECT status INTO v_status FROM tasks WHERE id = p_task_id;
   IF v_status IS NULL OR v_status IN ('in_progress', 'on_hold', 'completed') THEN
     RETURN;
   END IF;
@@ -38,7 +44,7 @@ BEGIN
   WHERE task_id = p_task_id AND is_mandatory = true;
 
   IF v_cat_count < 6 THEN
-    UPDATE hvac_tasks SET status = 'draft' WHERE id = p_task_id AND status <> 'draft';
+    UPDATE tasks SET status = 'draft' WHERE id = p_task_id AND status <> 'draft';
     RETURN;
   END IF;
 
@@ -59,9 +65,9 @@ BEGIN
   ) sub;
 
   IF v_all_complete THEN
-    UPDATE hvac_tasks SET status = 'ready' WHERE id = p_task_id AND status IN ('draft', 'blocked');
+    UPDATE tasks SET status = 'ready' WHERE id = p_task_id AND status IN ('draft', 'blocked');
   ELSE
-    UPDATE hvac_tasks SET status = 'blocked' WHERE id = p_task_id AND status IN ('draft', 'ready');
+    UPDATE tasks SET status = 'blocked' WHERE id = p_task_id AND status IN ('draft', 'ready');
   END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

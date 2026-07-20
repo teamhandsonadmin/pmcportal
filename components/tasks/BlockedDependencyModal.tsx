@@ -2,8 +2,8 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import type { DependencyCategory, DependencyItem } from '@/lib/types/hvac';
-import { isItemDone } from '@/lib/types/hvac';
+import type { DependencyCategory, DependencyItem } from '@/lib/types/tasks';
+import { isItemDone } from '@/lib/types/tasks';
 
 const CATEGORY_LABEL: Record<DependencyCategory, string> = {
   architect: 'Architect',

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { createInventoryItem } from '@/app/actions/inventory';
 import { INVENTORY_UNITS } from '@/lib/validations/inventory';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 const initialState: ActionResult<{ itemId: string }> = { success: true };
 

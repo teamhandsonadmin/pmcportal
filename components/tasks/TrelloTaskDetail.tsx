@@ -7,8 +7,8 @@ import {
   updateDependencyCompletion,
   updateDependencyItemLabel,
 } from '@/app/actions/dependencies';
-import type { DependencyCategory, DependencyItem, CompletionStatus } from '@/lib/types/hvac';
-import { CATEGORY_COLORS, isItemDone } from '@/lib/types/hvac';
+import type { DependencyCategory, DependencyItem, CompletionStatus } from '@/lib/types/tasks';
+import { CATEGORY_COLORS, isItemDone } from '@/lib/types/tasks';
 import { StatusDropdown } from './StatusDropdown';
 import { CommentThreadModal } from './CommentThreadModal';
 
@@ -245,7 +245,7 @@ function ChecklistCard({ category, items, taskId, locked }: { category: Dependen
 /* ── Main component ──────────────────────────────────────── */
 // Deliberately minimal by request: just the 5-category checklist, nothing
 // else. Task identification (name/status/due date) is already shown by the
-// shared header in app/(app)/hvac/[taskId]/layout.tsx, which wraps this
+// shared header in app/(app)/tasks/[taskId]/layout.tsx, which wraps this
 // page — repeating it here would be the "duplicate header" that was removed.
 // Status changes, prerequisite tasks, and progress summaries now live only
 // on the /overview sub-route.

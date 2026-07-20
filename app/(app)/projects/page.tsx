@@ -2,9 +2,9 @@ import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
 import { AutoRefresh } from '@/components/dashboard/AutoRefresh';
 import { RecentActivityFeed } from '@/components/dashboard/RecentActivityFeed';
-import { isItemDone } from '@/lib/types/hvac';
+import { isItemDone } from '@/lib/types/tasks';
 import { isOverdue } from '@/lib/utils/format';
-import type { ActivityEvent } from '@/lib/types/hvac';
+import type { ActivityEvent } from '@/lib/types/tasks';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +27,7 @@ async function getDashboardData() {
         },
       },
     }),
-    prisma.hvacTask.findMany({ select: { id: true, status: true, dueDate: true } }),
+    prisma.task.findMany({ select: { id: true, status: true, dueDate: true } }),
     prisma.dependencyItem.findMany({
       where: { isMandatory: true },
       select: { completion: { select: { status: true } } },

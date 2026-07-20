@@ -2,8 +2,8 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { AddHolidaySchema } from '@/lib/validations/hvac';
-import type { ActionResult } from '@/lib/types/hvac';
+import { AddHolidaySchema } from '@/lib/validations/tasks';
+import type { ActionResult } from '@/lib/types/tasks';
 
 export async function addHoliday(data: { date: string; name: string; type: string }): Promise<ActionResult> {
   const parsed = AddHolidaySchema.safeParse({ date: data.date, name: data.name, type: data.type });

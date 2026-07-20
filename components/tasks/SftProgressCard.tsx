@@ -15,7 +15,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { formatDate } from '@/lib/utils/format';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 interface SftEntry {
   id: string;

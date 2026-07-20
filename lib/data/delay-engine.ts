@@ -6,7 +6,7 @@ import {
   type DelayEngineDependency,
   type TaskDelayInfo,
 } from '@/lib/utils/delay-engine';
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus } from '@/lib/types/tasks';
 
 export interface TaskRef {
   id: string;
@@ -19,7 +19,7 @@ export interface DownstreamImpact extends TaskRef {
 }
 
 export interface TaskScheduleImpact {
-  // TaskDelayInfo.taskId is HvacTask.id (the UUID) — taskCode is the
+  // TaskDelayInfo.taskId is Task.id (the UUID) — taskCode is the
   // human-readable business code (e.g. "HVAC-003") for display.
   self: TaskDelayInfo & {
     taskCode: string;
@@ -45,7 +45,7 @@ export interface TaskScheduleImpact {
 // for this pass (see the prompt's non-goals: no dashboard-wide rollup yet).
 export async function getTaskScheduleImpact(taskId: string): Promise<TaskScheduleImpact | null> {
   const [tasks, deps] = await Promise.all([
-    prisma.hvacTask.findMany({
+    prisma.task.findMany({
       select: {
         id: true, taskId: true, taskName: true, status: true,
         plannedStartDate: true, dueDate: true, actualStartDate: true, actualEndDate: true,

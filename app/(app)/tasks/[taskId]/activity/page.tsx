@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { ActivityTimeline } from '@/components/hvac/ActivityTimeline';
-import type { ActivityEvent } from '@/lib/types/hvac';
+import { ActivityTimeline } from '@/components/tasks/ActivityTimeline';
+import type { ActivityEvent } from '@/lib/types/tasks';
 
 interface Props {
   params: Promise<{ taskId: string }>;
@@ -13,7 +13,7 @@ export default async function TaskActivityPage({ params }: Props) {
   const { taskId } = await params;
 
   const [task, logs] = await Promise.all([
-    prisma.hvacTask.findUnique({ where: { id: taskId }, select: { id: true } }),
+    prisma.task.findUnique({ where: { id: taskId }, select: { id: true } }),
     prisma.activityLog.findMany({
       where: { taskId },
       orderBy: { createdAt: 'desc' },

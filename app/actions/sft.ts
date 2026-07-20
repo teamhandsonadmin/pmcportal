@@ -2,14 +2,14 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { CreateSftEntrySchema, UpdateTaskTotalSftSchema } from '@/lib/validations/hvac';
-import type { ActionResult } from '@/lib/types/hvac';
+import { CreateSftEntrySchema, UpdateTaskTotalSftSchema } from '@/lib/validations/tasks';
+import type { ActionResult } from '@/lib/types/tasks';
 
 async function revalidateTaskFamily(taskId: string) {
   revalidatePath(`/tasks/${taskId}/overview`);
   revalidatePath('/tasks');
   revalidatePath('/works');
-  const task = await prisma.hvacTask.findUnique({
+  const task = await prisma.task.findUnique({
     where: { id: taskId },
     select: { workId: true, work: { select: { projectId: true } } },
   }).catch(() => null);
@@ -61,7 +61,7 @@ export async function updateTaskTotalSft(taskId: string, totalSft: number): Prom
   }
 
   try {
-    await prisma.hvacTask.update({
+    await prisma.task.update({
       where: { id: taskId },
       data: { totalSft: parsed.data.totalSft },
     });

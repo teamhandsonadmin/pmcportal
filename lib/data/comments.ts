@@ -1,12 +1,12 @@
 import { prisma } from '@/lib/prisma';
-import type { CompletionStatus, DependencyCategory } from '@/lib/types/hvac';
+import type { CompletionStatus, DependencyCategory } from '@/lib/types/tasks';
 
 export interface CommentThreadPreview {
   dependencyItemId: string;
   category: DependencyCategory;
   itemLabel: string;
   status: CompletionStatus;
-  taskId: string; // HvacTask.id, for linking to its dependencies page
+  taskId: string; // Task.id, for linking to its dependencies page
   taskCode: string;
   taskName: string;
   workName: string;

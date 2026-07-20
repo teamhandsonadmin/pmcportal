@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { DependencyTemplateEditor } from '@/components/hvac/DependencyTemplateEditor';
+import { DependencyTemplateEditor } from '@/components/tasks/DependencyTemplateEditor';
 
 export const dynamic = 'force-dynamic';
 

@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { createInventoryTransaction } from '@/app/actions/inventory';
 import { INVENTORY_TRANSACTION_TYPES } from '@/lib/validations/inventory';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 const initialState: ActionResult = { success: true };
 

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import type { DependencyCategory } from '@/lib/types/hvac';
+import type { DependencyCategory } from '@/lib/types/tasks';
 
 export interface ThreadComment {
   id: string;

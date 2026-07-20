@@ -2,8 +2,8 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { TaskTypeSchema } from '@/lib/validations/hvac';
-import type { ActionResult } from '@/lib/types/hvac';
+import { TaskTypeSchema } from '@/lib/validations/tasks';
+import type { ActionResult } from '@/lib/types/tasks';
 
 export async function createTaskType(data: { name: string; defaultDurationDays: number }): Promise<ActionResult<{ id: string }>> {
   const parsed = TaskTypeSchema.safeParse({ name: data.name, default_duration_days: data.defaultDurationDays });
@@ -45,7 +45,7 @@ export async function updateTaskType(id: string, data: { name: string; defaultDu
 }
 
 export async function deleteTaskType(id: string): Promise<ActionResult> {
-  const inUse = await prisma.hvacTask.count({ where: { taskTypeId: id } }).catch(() => 0);
+  const inUse = await prisma.task.count({ where: { taskTypeId: id } }).catch(() => 0);
   if (inUse > 0) {
     return { success: false, error: `Can't delete — ${inUse} task${inUse === 1 ? '' : 's'} still use${inUse === 1 ? 's' : ''} this type.` };
   }

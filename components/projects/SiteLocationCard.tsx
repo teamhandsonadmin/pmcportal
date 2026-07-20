@@ -14,7 +14,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { updateProjectLocation } from '@/app/actions/projects';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 const SiteLocationMap = dynamic(() => import('./SiteLocationMap'), {
   ssr: false,

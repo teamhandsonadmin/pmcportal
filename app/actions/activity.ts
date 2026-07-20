@@ -2,8 +2,8 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { AddCommentSchema } from '@/lib/validations/hvac';
-import type { ActionResult } from '@/lib/types/hvac';
+import { AddCommentSchema } from '@/lib/validations/tasks';
+import type { ActionResult } from '@/lib/types/tasks';
 
 export async function addComment(
   taskId: string,

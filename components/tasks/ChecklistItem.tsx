@@ -3,8 +3,8 @@
 import { useState, useTransition } from 'react';
 import { updateDependencyCompletion } from '@/app/actions/dependencies';
 import { formatDate } from '@/lib/utils/format';
-import { isItemDone } from '@/lib/types/hvac';
-import type { DependencyItem, CompletionStatus } from '@/lib/types/hvac';
+import { isItemDone } from '@/lib/types/tasks';
+import type { DependencyItem, CompletionStatus } from '@/lib/types/tasks';
 import { STATUS_CHIP, StatusDropdown } from './StatusDropdown';
 import { CommentThreadModal } from './CommentThreadModal';
 

@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { UpdateProjectLocationSchema, UpdateProjectTotalSftSchema, UpdateProjectInfoSchema } from '@/lib/validations/projects';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 const CreateProjectSchema = z.object({
   name:     z.string().min(2).max(200),
@@ -83,7 +83,7 @@ export async function updateProjectLocation(
   return { success: true };
 }
 
-// Project-wide SFT target, separate from any individual HvacTask.totalSft.
+// Project-wide SFT target, separate from any individual Task.totalSft.
 // Direct positional args (not a FormData/useActionState form action) —
 // matches updateTaskTotalSft's own pattern for the equivalent per-task field.
 export async function updateProjectTotalSft(projectId: string, totalSft: number): Promise<ActionResult> {
@@ -163,7 +163,7 @@ export interface DuplicateProjectResult {
   sftEntryCount: number;
 }
 
-// Work.code (varchar 10) and HvacTask.taskId (varchar 20) are both globally
+// Work.code (varchar 10) and Task.taskId (varchar 20) are both globally
 // unique, so a clone can't reuse the original's — this finds the first
 // "-C{n}" suffixed variant not already taken, truncating the base so the
 // result still fits the column, and reserves it in `taken` immediately so
@@ -181,7 +181,7 @@ function withUniqueSuffix(base: string, maxLen: number, taken: Set<string>): str
   }
 }
 
-// Deep-clones a project's full task graph (Works, HvacTasks, checklist
+// Deep-clones a project's full task graph (Works, Tasks, checklist
 // items + their completion state, series/parallel edges, SFT progress
 // history) under a brand-new Project row — an archival snapshot, not a
 // blank template. Does NOT clone ActivityLog (tied to the original's real
@@ -238,9 +238,9 @@ export async function duplicateProject(projectId: string, newName: string): Prom
       });
       if (workRows.length > 0) await tx.work.createMany({ data: workRows });
 
-      // ── HvacTasks ──
-      const tasks = await tx.hvacTask.findMany({ where: { work: { projectId } } });
-      const takenTaskIds = new Set((await tx.hvacTask.findMany({ select: { taskId: true } })).map((t) => t.taskId));
+      // ── Tasks ──
+      const tasks = await tx.task.findMany({ where: { work: { projectId } } });
+      const takenTaskIds = new Set((await tx.task.findMany({ select: { taskId: true } })).map((t) => t.taskId));
       const taskIdMap = new Map<string, string>();
       const taskRows = tasks.map((t) => {
         const newId = randomUUID();
@@ -265,7 +265,7 @@ export async function duplicateProject(projectId: string, newName: string): Prom
           manualPositionY: t.manualPositionY,
         };
       });
-      if (taskRows.length > 0) await tx.hvacTask.createMany({ data: taskRows });
+      if (taskRows.length > 0) await tx.task.createMany({ data: taskRows });
 
       const originalTaskIds = [...taskIdMap.keys()];
 

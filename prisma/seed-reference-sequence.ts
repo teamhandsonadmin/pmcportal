@@ -44,7 +44,7 @@ const MORE_WORKS = [
 
 // ── Task definitions ────────────────────────────────────────────────────
 // `key` is only used internally by this script to wire up edges below —
-// it is never persisted. `reuse` names an existing HvacTask.taskId to reuse
+// it is never persisted. `reuse` names an existing Task.taskId to reuse
 // instead of creating a new task (matched by meaning against the PDF step,
 // not exact string — see CHANGELOG for the full match list, including the
 // handful where the existing demo task's Work disagrees with the PDF's
@@ -410,21 +410,21 @@ async function main() {
     if (!workByCode.has(t.work)) throw new Error(`Unknown work code "${t.work}" for task "${t.name}"`);
   }
 
-  // Resolve each key to a real HvacTask row: reuse if named, else find-or-create by name.
+  // Resolve each key to a real Task row: reuse if named, else find-or-create by name.
   const keyToTaskId = new Map<string, string>();
   let createdCount = 0;
   let reusedCount = 0;
 
   for (const t of TASKS) {
     if (t.reuse) {
-      const existing = await prisma.hvacTask.findUnique({ where: { taskId: t.reuse }, select: { id: true } });
+      const existing = await prisma.task.findUnique({ where: { taskId: t.reuse }, select: { id: true } });
       if (!existing) throw new Error(`Expected existing task "${t.reuse}" to reuse for "${t.name}" — not found.`);
       keyToTaskId.set(t.key, existing.id);
       reusedCount++;
       continue;
     }
 
-    const existingByName = await prisma.hvacTask.findFirst({ where: { taskName: t.name }, select: { id: true } });
+    const existingByName = await prisma.task.findFirst({ where: { taskName: t.name }, select: { id: true } });
     if (existingByName) {
       keyToTaskId.set(t.key, existingByName.id);
       reusedCount++;
@@ -434,7 +434,7 @@ async function main() {
     const workId = workByCode.get(t.work)!;
     const work = await prisma.work.findUnique({ where: { id: workId }, select: { code: true, project: { select: { name: true } } } });
     const taskIdPrefix = work!.code;
-    const maxExisting = await prisma.hvacTask.findMany({
+    const maxExisting = await prisma.task.findMany({
       where: { taskId: { startsWith: `${taskIdPrefix}-` } },
       select: { taskId: true },
     });
@@ -444,7 +444,7 @@ async function main() {
     }, 0);
     const newTaskId = `${taskIdPrefix}-${String(maxNum + 1).padStart(3, '0')}`;
 
-    const created = await prisma.hvacTask.create({
+    const created = await prisma.task.create({
       data: {
         taskId: newTaskId,
         taskName: t.name,
@@ -511,7 +511,7 @@ async function main() {
 
   console.log(`Edges: ${edgesCreated} created, ${edgesSkippedDup} already existed, ${edgesSkippedCycle} skipped as cycles.`);
 
-  const totalTasks = await prisma.hvacTask.count();
+  const totalTasks = await prisma.task.count();
   const totalWorks = await prisma.work.count();
   const totalEdges = await prisma.taskDependency.count();
   console.log(`\nFinal counts — Works: ${totalWorks}, Tasks: ${totalTasks}, TaskDependency edges: ${totalEdges}`);

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { getCurrentClientProfile, type CurrentClientProfile } from '@/lib/auth/current-client';
 import { wouldCreateCycle } from '@/lib/utils/dependency-graph';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 export interface DraftNodeData {
   id: string;

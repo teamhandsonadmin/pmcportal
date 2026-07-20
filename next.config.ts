@@ -10,8 +10,9 @@ const nextConfig: NextConfig = {
   // this app only tracked HVAC tasks — renamed to /tasks/* since it now
   // covers every trade. This is a real app with already-shared /hvac links
   // (bookmarks, chat history, etc.), so the old path permanently redirects
-  // rather than 404ing. Does NOT touch the HvacTask Prisma model or table —
-  // that rename is a separate, much larger concern this isn't attempting.
+  // rather than 404ing. The Prisma model/table (HvacTask/hvac_tasks) have
+  // SINCE also been renamed to Task/tasks — this redirect is unrelated to
+  // that and stays exactly as-is regardless, purely for old URL compatibility.
   async redirects() {
     return [
       {

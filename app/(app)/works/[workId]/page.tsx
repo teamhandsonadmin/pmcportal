@@ -1,12 +1,12 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
-import { TaskCard, TaskListHeader } from '@/components/hvac/TaskCard';
+import { TaskCard, TaskListHeader } from '@/components/tasks/TaskCard';
 import { StatsGrid } from '@/components/dashboard/StatsGrid';
 import { TaskFlowMap } from '@/components/tasks/TaskFlowMap';
 import { RecentActivityFeed } from '@/components/dashboard/RecentActivityFeed';
-import type { DashboardStats, HvacTask, CategoryProgress, ActivityEvent } from '@/lib/types/hvac';
-import { isItemDone } from '@/lib/types/hvac';
+import type { DashboardStats, Task, CategoryProgress, ActivityEvent } from '@/lib/types/tasks';
+import { isItemDone } from '@/lib/types/tasks';
 import { isOverdue, calcOverallProgress } from '@/lib/utils/format';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,7 @@ interface Props {
 async function getWorkData(workId: string) {
   const [work, tasks, activity, depItems, users, sftAgg, externalDeps] = await Promise.allSettled([
     prisma.work.findUnique({ where: { id: workId } }),
-    prisma.hvacTask.findMany({ where: { workId }, orderBy: { createdAt: 'asc' } }),
+    prisma.task.findMany({ where: { workId }, orderBy: { createdAt: 'asc' } }),
     prisma.activityLog.findMany({
       where: { task: { workId } },
       orderBy: { createdAt: 'desc' },
@@ -53,7 +53,7 @@ export default async function WorkTaskListPage({ params }: Props) {
   const work = workRes.status === 'fulfilled' ? workRes.value : null;
   if (!work) notFound();
 
-  const tasks: HvacTask[] = (tasksRes.status === 'fulfilled' ? tasksRes.value : []).map((t) => ({
+  const tasks: Task[] = (tasksRes.status === 'fulfilled' ? tasksRes.value : []).map((t) => ({
     ...t,
     totalSft: t.totalSft != null ? Number(t.totalSft) : null,
   }));

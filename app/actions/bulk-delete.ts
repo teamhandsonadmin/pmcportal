@@ -3,7 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { Prisma } from '@/lib/generated/prisma';
-import type { ActionResult, TaskStatus } from '@/lib/types/hvac';
+import type { ActionResult, TaskStatus } from '@/lib/types/tasks';
 
 // Mirrors exactly the filters TasksExplorer already applies client-side
 // (search/work/status/assignee/project) so "clear all tasks" only ever
@@ -25,8 +25,8 @@ export interface BulkDeletePreview {
   dependencyLinkCount: number;
 }
 
-async function buildScopeWhere(scope: BulkDeleteScope): Promise<Prisma.HvacTaskWhereInput> {
-  const where: Prisma.HvacTaskWhereInput = {};
+async function buildScopeWhere(scope: BulkDeleteScope): Promise<Prisma.TaskWhereInput> {
+  const where: Prisma.TaskWhereInput = {};
   if (scope.projectName) where.projectName = scope.projectName;
   if (scope.workCode) where.work = { code: scope.workCode };
   if (scope.status) where.status = scope.status;
@@ -55,7 +55,7 @@ async function buildScopeWhere(scope: BulkDeleteScope): Promise<Prisma.HvacTaskW
 // tasks added/removed since it was last shown.
 export async function getBulkDeletePreview(scope: BulkDeleteScope): Promise<ActionResult<BulkDeletePreview>> {
   const where = await buildScopeWhere(scope);
-  const taskIds = (await prisma.hvacTask.findMany({ where, select: { id: true } })).map((t) => t.id);
+  const taskIds = (await prisma.task.findMany({ where, select: { id: true } })).map((t) => t.id);
 
   if (taskIds.length === 0) {
     return { success: true, data: { taskCount: 0, dependencyItemCount: 0, dependencyLinkCount: 0 } };
@@ -93,12 +93,12 @@ export async function bulkDeleteTasks(
   try {
     deletedCount = await prisma.$transaction(async (tx) => {
       const where = await buildScopeWhere(scope);
-      const matching = await tx.hvacTask.findMany({ where, select: { id: true } });
+      const matching = await tx.task.findMany({ where, select: { id: true } });
       const ids = matching.map((t) => t.id);
 
       if (ids.length === 0) return 0;
 
-      const { count } = await tx.hvacTask.deleteMany({ where: { id: { in: ids } } });
+      const { count } = await tx.task.deleteMany({ where: { id: { in: ids } } });
 
       await tx.activityLog.create({
         data: {

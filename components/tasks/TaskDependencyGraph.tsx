@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ReactFlow,
@@ -30,12 +30,12 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from '@dagrejs/dagre';
-import type { TaskStatus, DependencyType } from '@/lib/types/hvac';
-import type { ActionResult } from '@/lib/types/hvac';
-import { STATUS_COLOR_PALETTE, STATUS_COLOR_GROUP, allowedTransitions, TRANSITION_LABELS, DEPENDENCY_TYPE_LABELS, isDependencySatisfied } from '@/lib/utils/status-rules';
+import type { TaskStatus, DependencyType } from '@/lib/types/tasks';
+import type { ActionResult } from '@/lib/types/tasks';
+import { STATUS_COLOR_PALETTE, DEPENDENCY_TYPE_LABELS, isDependencySatisfied } from '@/lib/utils/status-rules';
 import type { TaskDelayInfo } from '@/lib/utils/delay-engine';
 import type { WorkOption } from '@/components/tasks/TasksExplorer';
-import type { TaskTypeOption } from '@/components/hvac/TaskTypeManager';
+import type { TaskTypeOption } from '@/components/tasks/TaskTypeManager';
 import {
   createTaskFromCanvas,
   updateTaskManualPosition,
@@ -44,12 +44,10 @@ import {
   updateTaskType,
   updateTaskPlannedDates,
   updateTaskActualDate,
-  updateTaskStatus,
-  deleteHvacTask,
+  deleteTask,
   getTaskDeleteImpact,
-  resetManualPositions,
   type TaskDeleteImpact,
-} from '@/app/actions/hvac-tasks';
+} from '@/app/actions/tasks';
 import { computeDueDate } from '@/app/actions/working-days';
 import { addTaskDependency, removeTaskDependency, reconnectTaskDependency, updateDependencyType } from '@/app/actions/task-dependencies';
 import { createParallelLink, removeParallelLink, reconnectParallelLink } from '@/app/actions/task-parallel-links';
@@ -108,6 +106,9 @@ export interface GraphTask {
   dueDate: Date | null;
   actualStartDate: Date | null;
   actualEndDate: Date | null;
+  currentPlannedStartDate: Date | null;
+  currentDueDate: Date | null;
+  cascadeDelayDays: number | null;
   manualPositionX: number | null;
   manualPositionY: number | null;
   prerequisiteCount: number;
@@ -148,7 +149,6 @@ type ActiveTool = 'select' | 'add' | 'link';
 
 interface NodeCallbacks {
   onDeleteRequest: (nodeId: string) => void;
-  onConnectFromNode: (nodeId: string) => void;
 }
 
 type NodeData = GraphTask & NodeCallbacks & Record<string, unknown>;
@@ -169,10 +169,15 @@ const NODE_HEIGHT = 130;
 // is currently at the bottom of the board. Module-level (not component
 // state) since it's a static, hardcoded list — a fresh array literal inside
 // the component would defeat sectionHeadingNodes' own memoization.
-const SECTION_HEADINGS: { label: string; afterColumnNumber: number }[] = [
-  { label: 'STRUCTURE INTERNAL WORKS', afterColumnNumber: 20 },
-  { label: 'EXTERNAL WORKS', afterColumnNumber: 24 },
-];
+const SECTION_HEADINGS: { label: string; afterColumnNumber: number }[] = [];
+
+// taskId of the first task of each new "set" in the source spreadsheet (a
+// grey divider row, then the next set's own numbering restarts at 1) —
+// purely to mark which single edge is a set-to-set TRANSITION, so it can be
+// drawn as a thicker red line instead of the routine orange series color
+// (see rawEdges below). No banner/label rendering here on purpose — just
+// the connector styling. Module-level since it's a static, hardcoded list.
+const SET_TRANSITION_TASK_IDS: string[] = ['2a', '3a', '4a', '5a', '6a', '7a', '8a', '9a', '10a', '11a'];
 
 // Shared string-based helper (vs. layoutWithDagre's own nodeId-keyed version)
 // for reading a task's column number directly off its taskId — used by
@@ -188,23 +193,23 @@ interface PhaseSection {
   maxCol: number;
 }
 
-// Derived from SECTION_HEADINGS, not a second hand-maintained list — the
-// board's own phase boundaries already ARE this data, just expressed as
-// "after column N" markers. The one addition here is the phase before the
-// first banner even exists: SECTION_HEADINGS never labels it (there was no
-// divider needed when it was the only phase on the board), so it's named
-// "Civil" explicitly — the original single work this whole board started
-// as. Used to scope the toolbar's projected-completion badge(s) per phase
-// instead of one number for the entire board, so "Civil" and a later
-// "Structure Internal Works"/"External Works" phase each get their own
-// answer to "when does THIS part finish" once those phases have real tasks
-// on them again.
+// Deliberately NOT derived from SECTION_HEADINGS (that array stays empty —
+// its big dark full-width banner was explicitly removed earlier and isn't
+// wanted back). This is its own independent list purely for scoping the
+// per-phase completion badges below: "Civil" (the original single work this
+// board started as) covers every column up to the first entry here, and
+// each subsequent entry opens a new phase — e.g. Structure Internal Works
+// starting at column 12 — with its own "when does THIS part finish" badge.
+const PHASE_BOUNDARY_COLUMNS: { label: string; afterColumnNumber: number }[] = [
+  { label: 'Structure Internal Works', afterColumnNumber: 11 },
+];
+
 const PHASE_SECTIONS: PhaseSection[] = [
-  { label: 'Civil', minCol: -Infinity, maxCol: SECTION_HEADINGS[0]?.afterColumnNumber ?? Infinity },
-  ...SECTION_HEADINGS.map((heading, i) => ({
+  { label: 'Civil', minCol: -Infinity, maxCol: PHASE_BOUNDARY_COLUMNS[0]?.afterColumnNumber ?? Infinity },
+  ...PHASE_BOUNDARY_COLUMNS.map((heading, i) => ({
     label: heading.label,
     minCol: heading.afterColumnNumber + 1,
-    maxCol: SECTION_HEADINGS[i + 1]?.afterColumnNumber ?? Infinity,
+    maxCol: PHASE_BOUNDARY_COLUMNS[i + 1]?.afterColumnNumber ?? Infinity,
   })),
 ];
 
@@ -234,6 +239,27 @@ function formatCardDateRange(start: Date | null, due: Date | null): string {
   return 'No planned dates';
 }
 
+// A task's own recorded lateness — plain calendar days between THIS task's
+// own planned vs. actual dates, nothing else. Deliberately NOT the
+// project-wide CPM cascade (lib/utils/delay-engine.ts): that engine inherits
+// delay from prerequisites and, for a not-yet-completed task, assumes it's
+// at least as late as today — both produced numbers that didn't match what
+// was actually typed into this one task's Actual Start/End fields. This
+// only fires once a real actual date has been entered for THIS task, and
+// only reports what that entry itself says.
+function ownDelayDays(data: { dueDate: Date | null; plannedStartDate: Date | null; actualEndDate: Date | null; actualStartDate: Date | null }): number | null {
+  const dayGap = (from: Date, to: Date) => Math.round((to.getTime() - from.getTime()) / 86_400_000);
+  if (data.dueDate && data.actualEndDate) {
+    const g = dayGap(data.dueDate, data.actualEndDate);
+    if (g > 0) return g;
+  }
+  if (data.plannedStartDate && data.actualStartDate) {
+    const g = dayGap(data.plannedStartDate, data.actualStartDate);
+    if (g > 0) return g;
+  }
+  return null;
+}
+
 // Several actions (createTaskFromCanvas, updateTaskPlannedDates, ...) can
 // fail with EITHER a plain string OR a Zod-style field-errors object (e.g.
 // { due_date: ['Due date must be on or after the planned start date'] }) —
@@ -261,7 +287,6 @@ function formatActionError(error: unknown, fallback: string): string {
 // React.memo below actually gets to skip re-rendering the other 94 nodes.
 interface GraphActions {
   onDuplicate: (nodeId: string) => void;
-  onQuickStatusChange: (nodeId: string, status: TaskStatus) => void;
   onRenameRequest: (nodeId: string) => void;
   onOpenTask: (nodeId: string) => void;
   onEdgeDeleteRequest: (edgeId: string) => void;
@@ -273,7 +298,7 @@ interface GraphActions {
   // Parallel, blue for FS/SS/FF/SF) without needing to know activeTool.
   linkType: RelationshipType | null;
   hoveredNodeId: string | null;
-  // Real dependency-chain (CPM) projections, keyed by HvacTask.id — the
+  // Real dependency-chain (CPM) projections, keyed by Task.id — the
   // same engine/data the internal Gantt's schedule-impact popup uses (see
   // lib/utils/delay-engine.ts, lib/data/gantt-delay.ts), computed once
   // server-side for the whole graph and read here instead of each TaskNode
@@ -288,11 +313,10 @@ interface GraphActions {
   groundedIds: Set<string>;
 }
 const GraphActionsContext = createContext<GraphActions>({
-  onDuplicate: () => {},
-  onQuickStatusChange: () => {},
-  onRenameRequest: () => {},
-  onOpenTask: () => {},
-  onEdgeDeleteRequest: () => {},
+  onDuplicate: () => { },
+  onRenameRequest: () => { },
+  onOpenTask: () => { },
+  onEdgeDeleteRequest: () => { },
   locked: false,
   pendingLinkSource: null,
   linkType: null,
@@ -330,18 +354,17 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
   const cfg = FORCED_GRAY;
   const hasConvergence = data.prerequisiteCount >= 2;
   const allPrereqsDone = data.prerequisiteCompletedCount === data.prerequisiteCount;
-  const transitions = allowedTransitions(data.status);
   // Selector resolves to a boolean, not the raw zoom level, so this only
   // re-renders nodes when crossing the threshold — not on every zoom tick.
   const showDates = useStore((s) => s.transform[2] >= DATE_VISIBLE_ZOOM_THRESHOLD);
-  // Real dependency-chain projection (CPM engine), not just "is this task's
-  // own dueDate in the past" — see GraphActions.delayById's doc comment.
-  // Ungrounded (no real schedule data anywhere in its own chain) or already
-  // completed: nothing meaningful to show.
-  const delayInfo = actions.groundedIds.has(id) ? actions.delayById[id] : undefined;
-  const delay = delayInfo && data.status !== 'completed' && delayInfo.totalDelayDays > 0
-    ? { totalDelayDays: delayInfo.totalDelayDays, inheritedDelayDays: delayInfo.inheritedDelayDays, ownDelayDays: delayInfo.ownDelayDays, projectedFinish: delayInfo.projectedFinish }
-    : null;
+  // A task's own actual-vs-planned gap takes priority when both exist —
+  // it's ground truth, the cascade figure is only an inherited estimate.
+  const ownDelay = ownDelayDays(data);
+  const delay = ownDelay ?? (data.cascadeDelayDays && data.cascadeDelayDays > 0 ? data.cascadeDelayDays : null);
+  // Own delay points at the real actual date; a cascaded (not-yet-actual)
+  // push points at this task's own current Due date, since that's exactly
+  // what got moved.
+  const delayTargetDate = ownDelay !== null ? (data.actualEndDate ?? data.actualStartDate) : (data.currentDueDate ?? data.currentPlannedStartDate);
 
   return (
     <div
@@ -352,9 +375,11 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
         borderColor: isPendingLinkSource
           ? (actions.linkType === 'PARALLEL' ? PARALLEL_SOURCE_COLOR : CONNECT_SOURCE_COLOR)
           : selected
-          ? MANUAL_EDGE_COLOR
-          : cfg.border,
-        borderWidth: isPendingLinkSource || selected ? 2 : 1,
+            ? MANUAL_EDGE_COLOR
+            : data.isParallelTask
+              ? '#9CA3AF'
+              : '#000000',
+        borderWidth: isPendingLinkSource || selected ? 2 : 1.5,
       }}
     >
       {/* Connecting is click-tool-driven (Part 2), not drag-from-handle —
@@ -368,44 +393,24 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
       <NodeToolbar
         isVisible={(selected || actions.hoveredNodeId === id) && !actions.locked}
         position={Position.Top}
-        offset={10}
+        // Cleared to sit above both of this node's own floating pills (see
+        // their own offsets just below) instead of the default 10 — at 10 it
+        // used to land right in the middle of that stack whenever a node was
+        // both selected/hovered and zoomed in enough to show dates.
+        offset={64}
       >
         <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-md p-1">
-          {transitions.length > 0 ? (
-            transitions.map((status) => (
-              <button
-                key={status}
-                type="button"
-                onClick={() => actions.onQuickStatusChange(id, status)}
-                className="text-[10.5px] font-medium px-2 py-1 rounded-md whitespace-nowrap"
-                style={{ background: STATUS_COLOR_PALETTE[STATUS_COLOR_GROUP[status]].bg, color: STATUS_COLOR_PALETTE[STATUS_COLOR_GROUP[status]].text }}
-              >
-                {TRANSITION_LABELS[status] ?? status}
-              </button>
-            ))
-          ) : (
-            <span
-              className="text-[10.5px] font-medium px-2 py-1 rounded-md whitespace-nowrap"
-              style={{ background: STATUS_COLOR_PALETTE[STATUS_COLOR_GROUP[data.status]].bg, color: STATUS_COLOR_PALETTE[STATUS_COLOR_GROUP[data.status]].text }}
-            >
-              {data.status}
-            </span>
-          )}
-          <div className="w-px h-4 bg-gray-200 mx-0.5" />
           <button type="button" onClick={() => actions.onOpenTask(id)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500" title="Open task">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          </button>
-          <button type="button" onClick={() => data.onConnectFromNode(id)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500" title="Link">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="19 11 19 5 13 5"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
           </button>
           <button type="button" onClick={() => actions.onDuplicate(id)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500" title="Duplicate">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
           </button>
           <button type="button" onClick={() => actions.onRenameRequest(id)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500" title="Rename">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z" /></svg>
           </button>
           <button type="button" onClick={() => data.onDeleteRequest(id)} className="p-1.5 rounded-md hover:bg-red-50 text-gray-500 hover:text-red-600" title="Delete">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14Z"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14Z" /></svg>
           </button>
         </div>
       </NodeToolbar>
@@ -423,59 +428,40 @@ const TaskNode = memo(function TaskNode({ id, data, selected }: NodeProps<Node<N
 
       {showDates && (
         <>
-          {/* Planned dates — always shown, delayed or not, and above the red
-              delay pill (not the other way around): a delay doesn't erase
-              what was originally committed to, it's additional information
-              layered below the plan it's measured against. */}
+          {/* The two pills sit right on top of each other, both hugging this
+              node's own top border — a compact, single stack, not spread
+              out — with the delay pill (the more attention-grabbing fact
+              when a task is running late) directly above the plan-date
+              pill. They only need to clear ONE other thing: a series edge's
+              own "FS"/"SS"/etc type badge, which floats independently at the
+              edge's true midpoint — see layoutWithDagre's ROW_STEP comment
+              for how that's kept clear of this whole stack. */}
+          {delay !== null && (
+            <div
+              className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
+              style={
+                // Own delay is this task's own actual-vs-planned gap — real,
+                // ground-truth lateness. A cascaded figure is just this
+                // task inheriting a push from an upstream delay it hasn't
+                // confirmed itself yet. A black outline vs. a plain fill keeps
+                // that distinction visible on the canvas instead of both
+                // looking like the same kind of red pill.
+                ownDelay !== null
+                  ? { top: -38, background: '#FEE2E2', color: '#B91C1C', border: '1.5px solid #000000' }
+                  : { top: -38, background: '#FEE2E2', color: '#B91C1C' }
+              }
+              title={ownDelay !== null ? 'Own delay — actual date recorded on this task' : 'Cascaded delay — inherited from an upstream task'}
+            >
+              +{delay}d → {formatCardDate(delayTargetDate)}
+            </div>
+          )}
           <div
             className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
-            style={{ top: -50, background: '#FEF08A', color: '#854D0E' }}
+            style={{ top: -18, background: '#FEF08A', color: '#854D0E' }}
           >
             {formatCardDateRange(data.plannedStartDate, data.dueDate)}
           </div>
-          {delay && (
-            <div
-              className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full text-[9.5px] font-semibold shadow-sm"
-              style={{ background: '#FEE2E2', color: '#B91C1C' }}
-            >
-              +{delay.totalDelayDays}d → {formatCardDate(delay.projectedFinish)}
-            </div>
-          )}
         </>
-      )}
-
-      {/* Always visible regardless of zoom (unlike the pill above, which is
-          zoom-gated) — a schedule slip is exactly the kind of signal that
-          shouldn't disappear just because the canvas is zoomed out. Mirrors
-          the delete button's corner-badge treatment on the opposite side. */}
-      {delay && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={(e) => e.stopPropagation()}
-                className="absolute -top-2 -left-2 w-5 h-5 rounded-full border-2 border-white shadow-sm flex items-center justify-center z-10"
-                style={{ backgroundColor: '#DC2626' }}
-                title={`Delayed ${delay.totalDelayDays} day${delay.totalDelayDays === 1 ? '' : 's'}`}
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round">
-                  <line x1="12" y1="7" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-              </button>
-            }
-          />
-          <TooltipContent side="top" className="p-2.5">
-            <p className="text-[11.5px] font-bold text-white">Delayed {delay.totalDelayDays} day{delay.totalDelayDays === 1 ? '' : 's'}</p>
-            {delay.inheritedDelayDays > 0 && (
-              <p className="text-[11px] text-gray-300 mt-1">
-                {delay.inheritedDelayDays} inherited, {delay.ownDelayDays} added by this task
-              </p>
-            )}
-            <p className="text-[11px] text-gray-300 mt-1">Planned: {formatCardDate(data.dueDate)}</p>
-            <p className="text-[11px] text-gray-300">Projected: {formatCardDate(delay.projectedFinish)}</p>
-          </TooltipContent>
-        </Tooltip>
       )}
 
       <p className="text-[9.5px] font-mono font-semibold text-muted-foreground/70 leading-tight">{data.taskId}</p>
@@ -780,6 +766,9 @@ function RelationshipSwatch({ type }: { type: RelationshipType }) {
   );
 }
 
+
+
+
 // One shared panel for both jobs the spec asks for: while the Link tool is
 // active it picks which of the five types the next two-click creation will
 // use (mode 'create'); while exactly one edge is selected instead, it shows
@@ -813,9 +802,8 @@ function RelationshipPanel({
               type="button"
               disabled={locked}
               onClick={() => onSelect(type)}
-              className={`flex items-start gap-2 px-2 py-1.5 rounded-lg text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                isActive ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'
-              }`}
+              className={`flex items-start gap-2 px-2 py-1.5 rounded-lg text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'
+                }`}
             >
               <span className="mt-1.5"><RelationshipSwatch type={type} /></span>
               <span className="flex-1 min-w-0">
@@ -868,15 +856,38 @@ function layoutWithDagre(
   // nodes (NODE_WIDTH + ranksep 130) — kept for visual consistency with the
   // rest of this canvas's established rhythm, not recomputed from scratch.
   const COL_GAP = NODE_WIDTH + 130;
-  // Tighter than the old TB branch's ranksep (90) — that gap read as too
-  // loose once chains started running many rows deep down the page.
-  const ROW_STEP = NODE_HEIGHT + 40;
+  // A series edge's own "FS"/"SS"/etc type badge sits at the edge's true
+  // midpoint (gap/2 above the target node) — completely independently of
+  // the target node's OWN plan-date (-18) and delay (-38, see TaskNode)
+  // pills, which deliberately touch each other right on the node's own
+  // border rather than spread out. The two systems don't know about each
+  // other, so this gap just needs to be big enough that gap/2 clears the
+  // farthest of that pair (-38) with margin: 140 puts the badge at 70 above
+  // the node, comfortably past -38, with room to spare on a two-row chain.
+  // This only governs AUTO-laid-out nodes though — a manually-positioned
+  // pair (e.g. right after Duplicate, which offsets by a flat +40px) is
+  // excluded from this entirely and needs its own position fixed by hand if
+  // it ends up hosting a real dependency edge later; see the duplicate
+  // that became 1a's FS successor for a case that needed exactly that.
+  const ROW_STEP = NODE_HEIGHT + 140;
   const SECTION_GAP_ROWS = 1; // one extra row of space between consecutive sections
 
   const autoNodeIds = new Set(nodes.map((n) => n.id).filter((id) => !manualPositions.has(id)));
 
-  const seriesEdges = edges.filter((e) => e.data?.linkType !== 'parallel');
-  const parallelEdges = edges.filter((e) => e.data?.linkType === 'parallel');
+  // SS ("must start together") is, for THIS layout's purposes, structurally
+  // a pairing relationship rather than a chain-building one — same as
+  // Parallel, and unlike FS/FF/SF, which genuinely order one task after
+  // another. Feeding an SS edge into the chain/rank-building graph below
+  // would merge two otherwise-independent chains into one branching mess
+  // the moment a real SS edge crosses between them (discovered when
+  // switching a Parallel cross-section link to SS collapsed a clean
+  // two-column section into a single mis-ordered dagre-TB fallback chain).
+  // Routing it through the same weld/pairing path as Parallel instead keeps
+  // both chains as their own simple rows, side by side, exactly like a
+  // Parallel link would — the arrow/badge rendering below is unaffected
+  // since that switches on the edge's own linkType, not this local split.
+  const seriesEdges = edges.filter((e) => e.data?.linkType !== 'parallel' && e.data?.dependencyType !== 'SS');
+  const parallelEdges = edges.filter((e) => e.data?.linkType === 'parallel' || e.data?.dependencyType === 'SS');
 
   const undirected = new Map<string, Set<string>>();
   const successorOf = new Map<string, string[]>();
@@ -1181,8 +1192,17 @@ function layoutWithDagre(
         // Anything not covered by the two sets above (e.g. an edge
         // touching a manually-positioned node, so it was never part of
         // any group computed here) falls back to the same geometric read
-        // the rest of this canvas has always used.
-        isPairing = !!sourcePos && !!targetPos && Math.abs(sourcePos.x - targetPos.x) <= 1;
+        // the rest of this canvas has always used. Same-or-adjacent-column
+        // (within COL_GAP*1.5, matching bigHorizontalJump's own threshold
+        // below) counts as a normal pairing regardless of vertical gap —
+        // a manually-positioned multi-row track (e.g. one long task on one
+        // track linked to several shorter tasks on its neighbor) is still
+        // squarely "two matched tracks running side by side," not a
+        // cross-section bridge, even though the two ends can land many rows
+        // apart when the tracks have different task counts. Only a genuine
+        // jump PAST a neighboring column into a spatially unrelated one
+        // should ever read as the rare red bridge case.
+        isPairing = !!sourcePos && !!targetPos && Math.abs(sourcePos.x - targetPos.x) <= COL_GAP * 1.5;
         isBridge = !isPairing && bigVerticalJump;
       }
 
@@ -1228,7 +1248,7 @@ interface CreateFormState {
   taskName: string;
   // No longer a visible field — Work/Trade and Task Type pickers were
   // removed from this form per request; workId still has to be set for the
-  // underlying HvacTask row, so it's defaulted silently (see openCreateForm)
+  // underlying Task row, so it's defaulted silently (see openCreateForm)
   // rather than surfaced as a control.
   workId: string;
   plannedStartDate: string;
@@ -1258,7 +1278,7 @@ interface EditFormState {
   actualStartDate: string;
   actualEndDate: string;
   taskTypeId: string; // '' = no type
-  // Freeform, NOT persisted on HvacTask itself — purely a client-side input
+  // Freeform, NOT persisted on Task itself — purely a client-side input
   // that (combined with plannedStartDate) drives the dueDate auto-suggestion
   // below, the same "Task Type -> defaultDurationDays -> suggested due date"
   // flow the separate Create Task form already has (see TaskForm.tsx). Only
@@ -1298,9 +1318,21 @@ export function TaskDependencyGraph({
   tasks, edges, parallelEdges, works, taskTypes, delayById, groundedIds, isFullscreen, onReady, emptyState, fullscreenContainer,
 }: TaskDependencyGraphProps) {
   const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
   const groundedSet = useMemo(() => new Set(groundedIds), [groundedIds]);
   const [darkCanvas, setDarkCanvas] = useState(false);
   const instanceRef = useRef<ReactFlowInstance | null>(null);
+  const [phaseJumpOpen, setPhaseJumpOpen] = useState(false);
+  const phaseJumpRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!phaseJumpOpen) return;
+    function onOutside(e: MouseEvent) {
+      if (phaseJumpRef.current && !phaseJumpRef.current.contains(e.target as unknown as globalThis.Node)) setPhaseJumpOpen(false);
+    }
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [phaseJumpOpen]);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>('select');
   const [groupByTrade, setGroupByTrade] = useState(false);
@@ -1332,8 +1364,6 @@ export function TaskDependencyGraph({
   const [createError, setCreateError] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditFormState | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  const [resetting, setResetting] = useState(false);
 
   const requestDeleteNode = useCallback((nodeId: string) => {
     const task = tasks.find((t) => t.id === nodeId);
@@ -1365,11 +1395,6 @@ export function TaskDependencyGraph({
     setEditError(null);
   }, [tasks]);
 
-  const handleConnectFromNode = useCallback((nodeId: string) => {
-    setActiveTool('link');
-    setPendingLinkSource(nodeId);
-  }, []);
-
   // Mirrors Create Task's own "Task Type -> defaultDurationDays -> suggested
   // due date" flow (see TaskForm.tsx) — recomputes dueDate whenever
   // durationDays or plannedStartDate changes, still fully overridable
@@ -1387,10 +1412,10 @@ export function TaskDependencyGraph({
     return () => { cancelled = true; };
   }, [editForm?.plannedStartDate, editForm?.durationDays]);
 
-  // computedNodes/computedEdges bake in only the two callbacks that never
-  // need to change out from under a running drag (onDeleteRequest/
-  // onConnectFromNode depend only on `tasks`) — this keeps each node's
-  // `data` reference stable across position-only updates, which combined
+  // computedNodes/computedEdges bake in only the one callback that never
+  // needs to change out from under a running drag (onDeleteRequest depends
+  // only on `tasks`) — this keeps each node's `data` reference stable across
+  // position-only updates, which combined
   // with TaskNode's React.memo means a drag on one node no longer forces
   // the other 94 to re-render. Everything that DOES change independently of
   // task data (duplicate/status/rename callbacks, lock state, which node is
@@ -1398,6 +1423,35 @@ export function TaskDependencyGraph({
   // `data` — see the Provider further down.
   const { nodes: computedNodes, edges: computedEdges } = useMemo(() => {
     const taskById = new Map(tasks.map((t) => [t.id, t]));
+    // The rule this board has always used: the main chain is whatever's
+    // reachable from the schedule's true root ("1a") by following FS edges
+    // only — that's the one continuous backbone the whole board is built
+    // around. A parallel link never grows that backbone; it just points
+    // sideways at a task that sits on a track of its own (an outdoor
+    // column, Mezzanine/Toilets, etc.), so ANY task not on the FS backbone
+    // is a parallel task by definition, whichever end of the dashed line it
+    // happens to be drawn at. Only that non-backbone side gets the grey
+    // border — the main-chain side stays black even when it's also
+    // pictured as one end of a parallel link.
+    const rootTask = tasks.find((t) => t.taskId === '1a');
+    const fsChildrenOf = new Map<string, string[]>();
+    for (const e of edges) {
+      if ((e.type ?? 'FS') !== 'FS') continue;
+      (fsChildrenOf.get(e.source) ?? fsChildrenOf.set(e.source, []).get(e.source)!).push(e.target);
+    }
+    const mainChainIds = new Set<string>();
+    if (rootTask) {
+      mainChainIds.add(rootTask.id);
+      const queue = [rootTask.id];
+      while (queue.length > 0) {
+        const id = queue.shift()!;
+        for (const next of fsChildrenOf.get(id) ?? []) {
+          if (mainChainIds.has(next)) continue;
+          mainChainIds.add(next);
+          queue.push(next);
+        }
+      }
+    }
 
     const rawNodes: Node[] = tasks.map((t) => ({
       id: t.id,
@@ -1405,22 +1459,34 @@ export function TaskDependencyGraph({
       data: {
         ...t,
         onDeleteRequest: requestDeleteNode,
-        onConnectFromNode: handleConnectFromNode,
+        isParallelTask: !mainChainIds.has(t.id),
       } as unknown as NodeData,
       position: { x: 0, y: 0 },
     }));
 
+    // A "set transition" edge — its target's taskId is in
+    // SET_TRANSITION_TASK_IDS — gets the same thicker red treatment as a
+    // parallel bridge (PARALLEL_BRIDGE_EDGE_COLOR), styled here rather than
+    // in layoutWithDagre: that function only ever recolors PARALLEL edges,
+    // leaving series ones "always orange, full stop" by design — this is
+    // the one deliberate exception, so it's applied at the source instead
+    // of touching that function's own series-is-always-orange contract.
+    const setTransitionTaskIds = new Set(SET_TRANSITION_TASK_IDS);
     const rawEdges: Edge[] = edges
       .filter((e) => taskById.has(e.source) && taskById.has(e.target))
-      .map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: 'floating',
-        data: { linkType: 'series', dependencyType: e.type ?? 'FS' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR },
-        style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },
-      }));
+      .map((e) => {
+        const isSetTransition = setTransitionTaskIds.has(taskById.get(e.target)?.taskId ?? '');
+        const stroke = isSetTransition ? PARALLEL_BRIDGE_EDGE_COLOR : EDGE_COLOR;
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          type: 'floating',
+          data: { linkType: 'series', dependencyType: e.type ?? 'FS' },
+          markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+          style: { stroke, strokeWidth: isSetTransition ? 3.5 : 1.5 },
+        };
+      });
 
     // Symmetric, non-blocking — dashed, distinctly-colored, and deliberately
     // no markerEnd (an arrow would wrongly imply an order between the two).
@@ -1442,7 +1508,7 @@ export function TaskDependencyGraph({
     );
 
     return layoutWithDagre(rawNodes, [...rawEdges, ...rawParallelEdges], manualPositions);
-  }, [tasks, edges, parallelEdges, requestDeleteNode, handleConnectFromNode]);
+  }, [tasks, edges, parallelEdges, requestDeleteNode]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(computedNodes);
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>(computedEdges);
@@ -1474,11 +1540,22 @@ export function TaskDependencyGraph({
   const handleDuplicate = useCallback((nodeId: string) => {
     const task = tasks.find((t) => t.id === nodeId);
     if (!task || !task.workId) return;
+    // A "<number><letter>" taskId (e.g. "1a") is this project's own
+    // sequence convention, not a one-off — duplicating it continues that
+    // same series server-side (see nextSeriesTaskId) instead of getting a
+    // generic code, so it should read as "the next one in the sequence,"
+    // not literally a copy of the one before it.
+    const isSeriesTaskId = /^\d+[a-z]+$/.test(task.taskId);
     createTaskFromCanvas({
-      taskName: `${task.taskName} (Copy)`,
+      // No manualPositionX/Y — deliberately left auto-eligible (see
+      // CanvasTaskInput's own comment) so the moment this copy gets linked
+      // to something via the Link tool, completeConnection's own
+      // relayout-after-connect picks it up and positions it properly,
+      // instead of it staying wherever this one-time +40/+40 nudge put it
+      // forever.
+      taskName: isSeriesTaskId ? task.taskName : `${task.taskName} (Copy)`,
       workId: task.workId,
-      manualPositionX: (task.manualPositionX ?? 0) + 40,
-      manualPositionY: (task.manualPositionY ?? 0) + 40,
+      duplicateFromTaskId: task.taskId,
     }).then((res) => {
       if (!res.success) {
         flashError(formatActionError(res.error, 'Failed to duplicate task'));
@@ -1488,6 +1565,9 @@ export function TaskDependencyGraph({
         flashError('Failed to duplicate task');
         return;
       }
+      // Purely a temporary on-screen spot until the next real layout pass
+      // (or completeConnection's relayout, once this gets linked) moves
+      // it — NOT persisted as a manual override, hence null/null below.
       const original = nodesRef.current.find((n) => n.id === nodeId);
       const position = original
         ? { x: original.position.x + 40, y: original.position.y + 40 }
@@ -1509,8 +1589,8 @@ export function TaskDependencyGraph({
             assigneeName: null,
             plannedStartDate: null,
             dueDate: null,
-            manualPositionX: position.x,
-            manualPositionY: position.y,
+            manualPositionX: null,
+            manualPositionY: null,
             prerequisiteCount: 0,
             prerequisiteCompletedCount: 0,
           } as unknown as NodeData,
@@ -1519,17 +1599,6 @@ export function TaskDependencyGraph({
       flashSaved();
     });
   }, [tasks, setNodes]);
-
-  const handleQuickStatusChange = useCallback((nodeId: string, status: TaskStatus) => {
-    updateTaskStatus(nodeId, status).then((res) => {
-      if (!res.success) {
-        flashError(formatActionError(res.error, 'Failed to update status'));
-        return;
-      }
-      setNodes((nds) => nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, status } } : n)));
-      flashSaved();
-    });
-  }, [setNodes]);
 
   // Group-by-trade frames — computed from LIVE local node positions (so they
   // track drags in real time), one per distinct Work among currently visible
@@ -1607,6 +1676,20 @@ export function TaskDependencyGraph({
     // has to place the banner itself, not carve out room for what's below it.
   }, [nodes]);
 
+  // SET_DIVIDERS' own render pass — see that constant's comment for why this
+  // is independent of sectionHeadingNodes/SECTION_HEADINGS above. Anchored
+  // directly by a real task's own position (whichever task's taskId matches
+  // firstTaskId) rather than a column-number threshold: the bottom edge of
+  // this set is "every task positioned above that anchor task's own row"
+  // (a small Y tolerance, not a strict less-than, so the anchor's own
+  // parallel-row partner — same Y, sitting in a different column — is never
+  // mistaken for something the set above needs room to clear), which stays
+  // correct regardless of how many columns either set has. No reserved-gap
+  // step is needed the way SECTION_HEADINGS needs HEADING_GAP_ROWS: every
+  // node here is manually positioned already (this schedule doesn't lean on
+  // dagre auto-layout at all), so there's no auto-row-spacing for a banner
+  // to fight with — the gap only has to look right, not avoid a collision
+  // with something layoutWithDagre is about to place.
   // Read by every TaskNode via GraphActionsContext instead of via `data` —
   // memoized so a position-only change to `nodes` (a drag frame) does NOT
   // give this a new reference, which would otherwise re-render every node
@@ -1750,39 +1833,73 @@ export function TaskDependencyGraph({
   // PHASE_SECTIONS range that actually has visible tasks right now (a phase
   // with nothing on it yet, e.g. Structure Internal Works right after its
   // tasks were cleared out, simply has no badge until real tasks exist there
-  // again). plannedCompletion is just "what everyone in this phase
-  // originally committed to"; projectedCompletion is "given every actual
-  // date entered so far, when does the last task in THIS phase's chain
-  // actually land" — the two only diverge once something in that phase is
-  // delayed. Deliberately per-phase, not one whole-board number — "Civil"
-  // and a later "Structure Internal Works"/"External Works" phase are
-  // different questions a client asks separately, not one merged answer.
+  // again). Deliberately just THAT phase's own last task's own dates — not a
+  // CPM projection across the whole chain — so this always reads as "when
+  // does whichever task is currently last in the sequence finish," and
+  // adding a new task further down the sequence moves the badge to that new
+  // task automatically, with no other computation involved. plannedCompletion
+  // is that last task's own original dueDate; projectedCompletion prefers
+  // actualEndDate (the real, already-happened ground truth — e.g. a task due
+  // Jul 9 that actually finished Jul 10), then currentDueDate (a cascade
+  // pushed it but it hasn't actually finished yet — see
+  // cascadePlannedDatesFromActualDelay in app/actions/tasks.ts), then falls
+  // back to dueDate if neither has happened. Same precedence TaskNode's own
+  // delay pill uses (actualEndDate ?? actualStartDate first), just without
+  // the actualStartDate step since a *completion* date is what's being asked
+  // here, not a start date.
+  //
+  // "Last task" is whichever task has no FS dependent within this phase (a
+  // graph leaf) — NOT just the highest taskId by string, which only works
+  // for tasks that follow the "<number><letter>" series convention. A
+  // duplicate's auto-generated "<WORK_CODE>-<timestamp>" code sorts on its
+  // random timestamp suffix, completely unrelated to chain position.
+  //
+  // A phase can easily have MORE than one leaf at once — e.g. a real chain's
+  // true end, plus a brand-new standalone task nobody's linked into anything
+  // yet — and picking between them by taskId string was wrong (a fresh
+  // task's random suffix has no relation to which one actually finishes
+  // last). The phase isn't done until every one of its leaves is, so the
+  // right answer is the LATEST projected completion among all of them, not
+  // an arbitrary single "winner" — this also happens to be exactly correct
+  // for genuine parallel branches, not just this one-standalone-task case.
+  // Falls back to every section task (not just leaves) only if the section
+  // has none at all (e.g. a not-yet-possible cycle), so this never ends up
+  // with zero candidates.
   const phaseCompletions = useMemo(() => {
+    const hasFsDependent = new Set(
+      edges.filter((e) => (e.type ?? 'FS') === 'FS').map((e) => e.source)
+    );
     return PHASE_SECTIONS.map((section) => {
       const sectionTasks = tasks.filter((t) => {
         const col = taskIdColumnNumber(t.taskId);
         return col >= section.minCol && col <= section.maxCol;
       });
-      const dueDates = sectionTasks.map((t) => t.dueDate).filter((d): d is Date => !!d);
-      const projectedDates = sectionTasks
-        .filter((t) => groundedSet.has(t.id))
-        .map((t) => delayById[t.id]?.projectedFinish)
-        .filter((d): d is Date => !!d);
-      const plannedCompletion = dueDates.length > 0 ? dueDates.reduce((a, b) => (a > b ? a : b)) : null;
-      const projectedCompletion = projectedDates.length > 0 ? projectedDates.reduce((a, b) => (a > b ? a : b)) : null;
+      if (sectionTasks.length === 0) {
+        return { label: section.label, plannedCompletion: null, projectedCompletion: null, isDelayed: false, lastTaskName: null };
+      }
+      const leafTasks = sectionTasks.filter((t) => !hasFsDependent.has(t.id));
+      const candidates = leafTasks.length > 0 ? leafTasks : sectionTasks;
+      const latest = candidates.reduce<{ plannedCompletion: Date | null; projectedCompletion: Date; taskName: string } | null>((best, t) => {
+        const projectedCompletion = t.actualEndDate ?? t.currentDueDate ?? t.dueDate;
+        if (!projectedCompletion) return best;
+        if (!best || projectedCompletion > best.projectedCompletion) {
+          return { plannedCompletion: t.dueDate, projectedCompletion, taskName: t.taskName };
+        }
+        return best;
+      }, null);
       return {
         label: section.label,
-        plannedCompletion,
-        projectedCompletion,
-        isDelayed: !!(plannedCompletion && projectedCompletion && projectedCompletion > plannedCompletion),
+        plannedCompletion: latest?.plannedCompletion ?? null,
+        projectedCompletion: latest?.projectedCompletion ?? null,
+        isDelayed: !!(latest?.plannedCompletion && latest.projectedCompletion > latest.plannedCompletion),
+        lastTaskName: latest?.taskName ?? null,
       };
     }).filter((s) => s.projectedCompletion !== null);
-  }, [tasks, delayById, groundedSet]);
+  }, [tasks, edges]);
 
   const graphActionsValue = useMemo(
     (): GraphActions => ({
       onDuplicate: handleDuplicate,
-      onQuickStatusChange: handleQuickStatusChange,
       onRenameRequest: openEditForm,
       onOpenTask: handleOpenTask,
       onEdgeDeleteRequest: requestEdgeDelete,
@@ -1793,7 +1910,7 @@ export function TaskDependencyGraph({
       delayById,
       groundedIds: groundedSet,
     }),
-    [handleDuplicate, handleQuickStatusChange, openEditForm, handleOpenTask, requestEdgeDelete, locked, pendingLinkSource, activeTool, linkType, hoveredNodeId, delayById, groundedSet]
+    [handleDuplicate, openEditForm, handleOpenTask, requestEdgeDelete, locked, pendingLinkSource, activeTool, linkType, hoveredNodeId, delayById, groundedSet]
   );
 
   const nodesForFlow = useMemo(
@@ -1870,6 +1987,20 @@ export function TaskDependencyGraph({
     openCreateForm(findClearPosition(position));
   }
 
+  // Clicking empty canvas while the create-relationship panel is open is a
+  // fourth way to dismiss it, on top of the three the panel's own footer
+  // already documents (re-click the active type, Esc, or the Select tool) —
+  // same effect as picking Select, just triggered by clicking outside
+  // instead of a toolbar button. The edit-mode panel (an existing edge
+  // selected) doesn't need this: React Flow's own default pane-click
+  // deselection already clears selectedEdgeIds, which is what closes it.
+  function handlePaneClick() {
+    if (activeTool === 'link') {
+      setActiveTool('select');
+      setPendingLinkSource(null);
+    }
+  }
+
   function handleAddTaskClick() {
     setActiveTool('add');
     const position = instanceRef.current?.screenToFlowPosition({
@@ -1896,7 +2027,40 @@ export function TaskDependencyGraph({
 
   function handleNodeDragStop(_event: unknown, node: Node) {
     if (node.type !== 'task') return;
-    updateTaskManualPosition(node.id, node.position.x, node.position.y).then((res) => {
+
+    // Snap into exact alignment with a connected neighbor when the drop
+    // lands close enough — same tolerance layoutWithDagre's own auto-node
+    // snap uses (AUTO_ALIGN_TOLERANCE_PX), just applied live on drop instead
+    // of only at layout-compute time. Series (FS/SS/FF/SF) neighbors snap
+    // on X (a straight vertical connector); parallel neighbors snap on Y
+    // instead (a straight HORIZONTAL connector — parallel is meant to sit
+    // side by side in the same row, not stacked, so X-snapping one to a
+    // parallel partner would fight the very layout it's supposed to show).
+    const seriesNeighborXs = flowEdges
+      .filter((e) => (e.source === node.id || e.target === node.id) && e.data?.linkType !== 'parallel')
+      .map((e) => nodesRef.current.find((n) => n.id === (e.source === node.id ? e.target : e.source))?.position.x)
+      .filter((x): x is number => x != null);
+    let snappedX = node.position.x;
+    for (const x of seriesNeighborXs) {
+      const delta = Math.abs(x - node.position.x);
+      if (delta > 0 && delta <= AUTO_ALIGN_TOLERANCE_PX) { snappedX = x; break; }
+    }
+
+    const parallelNeighborYs = flowEdges
+      .filter((e) => (e.source === node.id || e.target === node.id) && e.data?.linkType === 'parallel')
+      .map((e) => nodesRef.current.find((n) => n.id === (e.source === node.id ? e.target : e.source))?.position.y)
+      .filter((y): y is number => y != null);
+    let snappedY = node.position.y;
+    for (const y of parallelNeighborYs) {
+      const delta = Math.abs(y - node.position.y);
+      if (delta > 0 && delta <= AUTO_ALIGN_TOLERANCE_PX) { snappedY = y; break; }
+    }
+
+    if (snappedX !== node.position.x || snappedY !== node.position.y) {
+      setNodes((nds) => nds.map((n) => (n.id === node.id ? { ...n, position: { x: snappedX, y: snappedY } } : n)));
+    }
+
+    updateTaskManualPosition(node.id, snappedX, snappedY).then((res) => {
       if (res.success) flashSaved();
       else flashError(formatActionError(res.error, 'Failed to save position'));
     });
@@ -1977,11 +2141,23 @@ export function TaskDependencyGraph({
     flashSaved();
   }
 
-  // Symmetric and non-blocking — unlike completeConnection, adding a
-  // parallel link never changes any node's rank (layoutWithDagre excludes
-  // 'parallel' edges from dagre's graph entirely — see the comment there
-  // on why letting dagre rank them isn't needed and actively crashes it),
-  // so there's nothing to re-lay-out here; just show the new dashed line.
+  // Unlike completeConnection, adding a parallel link never changes any
+  // node's RANK (layoutWithDagre excludes 'parallel' edges from dagre's
+  // graph entirely), so a full re-layout pass isn't needed here. But a
+  // parallel link reads as "these two run side by side," which only looks
+  // right with a level connector — layoutWithDagre only welds a pair into
+  // guaranteed row-alignment when there are 2+ parallel links between the
+  // same two chains (a real dual-track section); a single link like this
+  // one is deliberately left as a loose "bridge" that can end up at any Y,
+  // per that function's own comment. So this aligns the two nodes directly:
+  // whichever side is still auto-laid-out gets its Y snapped to the OTHER
+  // side's Y (the first-clicked node, taskAId, wins if both are auto — an
+  // arbitrary but consistent choice), and — critically — that Y gets
+  // PERSISTED as a manual position, not just set for this render. Without
+  // that, the very next full layout recompute (a page reload, another
+  // connection elsewhere) would drop the auto side right back to wherever
+  // dagre's own placement puts it, since dagre has no idea these two are
+  // supposed to line up.
   async function completeParallelLink(taskAId: string, taskBId: string) {
     // See completeConnection's comment — activeTool/linkType deliberately
     // untouched here too, for the same rapid-repeat-creation reason.
@@ -2006,6 +2182,34 @@ export function TaskDependencyGraph({
       },
     ]);
 
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+    const hasManual = (id: string) => taskById.get(id)?.manualPositionX != null && taskById.get(id)?.manualPositionY != null;
+    const aHasManual = hasManual(taskAId);
+    const bHasManual = hasManual(taskBId);
+    // Prefer whichever side is ALREADY pinned as the anchor (don't move a
+    // deliberately-placed node to match one that's just sitting wherever
+    // auto-layout happened to put it); if neither is pinned, taskA (the
+    // first-clicked node) wins as an arbitrary but consistent choice.
+    const anchorId = aHasManual ? taskAId : bHasManual ? taskBId : taskAId;
+    const followerId = anchorId === taskAId ? taskBId : taskAId;
+    const anchorHasManual = anchorId === taskAId ? aHasManual : bHasManual;
+    const anchorNode = nodesRef.current.find((n) => n.id === anchorId);
+    const followerNode = nodesRef.current.find((n) => n.id === followerId);
+    if (anchorNode && followerNode) {
+      const alignedY = anchorNode.position.y;
+      if (followerNode.position.y !== alignedY) {
+        setNodes((nds) => nds.map((n) => (n.id === followerId ? { ...n, position: { ...n.position, y: alignedY } } : n)));
+      }
+      updateTaskManualPosition(followerId, followerNode.position.x, alignedY).catch(() => {});
+      // The anchor itself might still be auto-laid-out too (neither side had
+      // a manual position going in) — pin it in place as well, so a later
+      // relayout elsewhere on the board can't drift IT away from this
+      // pairing either, breaking the alignment right back apart.
+      if (!anchorHasManual) {
+        updateTaskManualPosition(anchorId, anchorNode.position.x, anchorNode.position.y).catch(() => {});
+      }
+    }
+
     flashSaved();
   }
 
@@ -2028,8 +2232,8 @@ export function TaskDependencyGraph({
   // only definition on TaskNode. Needed because `tasks` (and therefore each
   // node's baked-in prerequisiteCount) only refreshes on a real navigation;
   // every other local mutation in this file that touches a series edge
-  // needs to patch this itself to stay live, the same way handleQuickStatusChange
-  // already patches `status` locally after its own server call succeeds.
+  // needs to patch this itself to stay live, the same way handleDuplicate
+  // already patches local node state after its own server call succeeds.
   // Only FS/SS-type edges count here, matching lib/data/works.ts's server-
   // side computation exactly (see that file's comment) — this badge means
   // "is this task blocked from STARTING by its prerequisites", which is
@@ -2167,7 +2371,7 @@ export function TaskDependencyGraph({
   // performEdgeDelete/requestEdgeDelete above). Deleting a NODE never
   // happens this way — pressing Delete with a node selected opens the
   // confirmation dialog instead of removing anything, since a real
-  // HvacTask carries checklist history, activity logs, and potentially
+  // Task carries checklist history, activity logs, and potentially
   // other tasks' dependencies.
   function handleKeyDown(event: React.KeyboardEvent) {
     if (locked) return;
@@ -2297,7 +2501,17 @@ export function TaskDependencyGraph({
       if (!res.success) { setEditError(formatActionError(res.error, 'Failed to update dates')); return; }
     }
     if (actualStartChanged) {
-      const res = await updateTaskActualDate(editForm.nodeId, 'actualStartDate', editForm.actualStartDate || null);
+      // Pass the end date's own pending value too, whenever it's ALSO
+      // changing in this same edit — otherwise this call validates the new
+      // start against the database's still-old end (this update hasn't run
+      // yet), which falsely rejects moving both dates forward together
+      // (e.g. 10th -> 11th for both).
+      const res = await updateTaskActualDate(
+        editForm.nodeId,
+        'actualStartDate',
+        editForm.actualStartDate || null,
+        actualEndChanged ? (editForm.actualEndDate || null) : undefined
+      );
       if (!res.success) { setEditError(formatActionError(res.error, 'Failed to update actual start date')); return; }
     }
     if (actualEndChanged) {
@@ -2307,18 +2521,18 @@ export function TaskDependencyGraph({
 
     setNodes((nds) => nds.map((n) => (n.id === editForm.nodeId
       ? {
-          ...n,
-          data: {
-            ...n.data,
-            taskName: fullName,
-            description: editForm.description || null,
-            taskTypeId: editForm.taskTypeId || null,
-            plannedStartDate: editForm.plannedStartDate ? new Date(editForm.plannedStartDate) : null,
-            dueDate: editForm.dueDate ? new Date(editForm.dueDate) : null,
-            actualStartDate: editForm.actualStartDate ? new Date(editForm.actualStartDate) : null,
-            actualEndDate: editForm.actualEndDate ? new Date(editForm.actualEndDate) : null,
-          },
-        }
+        ...n,
+        data: {
+          ...n.data,
+          taskName: fullName,
+          description: editForm.description || null,
+          taskTypeId: editForm.taskTypeId || null,
+          plannedStartDate: editForm.plannedStartDate ? new Date(editForm.plannedStartDate) : null,
+          dueDate: editForm.dueDate ? new Date(editForm.dueDate) : null,
+          actualStartDate: editForm.actualStartDate ? new Date(editForm.actualStartDate) : null,
+          actualEndDate: editForm.actualEndDate ? new Date(editForm.actualEndDate) : null,
+        },
+      }
       : n)));
     flashSaved();
     setEditForm(null);
@@ -2332,7 +2546,7 @@ export function TaskDependencyGraph({
 
   async function confirmDelete() {
     if (!deleteConfirm) return;
-    const res = await deleteHvacTask(deleteConfirm.nodeId);
+    const res = await deleteTask(deleteConfirm.nodeId);
     if (!res.success) {
       setDeleteConfirm((prev) => (prev ? { ...prev, error: formatActionError(res.error, 'Failed to delete task') } : prev));
       return;
@@ -2341,41 +2555,6 @@ export function TaskDependencyGraph({
     setFlowEdges((eds) => eds.filter((e) => e.source !== deleteConfirm.nodeId && e.target !== deleteConfirm.nodeId));
     flashSaved();
     setDeleteConfirm(null);
-  }
-
-  async function confirmResetLayout() {
-    setResetting(true);
-    const res = await resetManualPositions(tasks.map((t) => t.id));
-    setResetting(false);
-    if (!res.success) {
-      flashError(formatActionError(res.error, 'Failed to reset layout'));
-      return;
-    }
-
-    // Clearing manual positions server-side doesn't, by itself, change
-    // anything the already-mounted canvas is showing — revalidatePath only
-    // affects the next full page load, not this live client tree. Every
-    // other mutation in this file (create/delete/drag/connect) reflects its
-    // result locally right away; this re-runs the same dagre layout used
-    // for the connect-tool's auto-arrange, with an empty manual-positions
-    // map so every node settles into pure auto-layout immediately.
-    const allEdgesPlain = flowEdges.map((e) => ({ source: e.source, target: e.target, data: e.data }));
-    const taskById = new Map(tasks.map((t) => [t.id, t]));
-    const plainNodes: Node[] = nodes.map((n) => ({
-      id: n.id,
-      type: n.type,
-      data: { plannedStartDate: taskById.get(n.id)?.plannedStartDate ?? null },
-      position: n.position,
-    }));
-    const relaid = layoutWithDagre(plainNodes, allEdgesPlain as Edge[], new Map());
-    const relaidById = new Map(relaid.nodes.map((n) => [n.id, n.position]));
-    setNodes((nds) => nds.map((n) => {
-      const pos = relaidById.get(n.id);
-      return pos ? { ...n, position: pos } : n;
-    }));
-
-    flashSaved();
-    setResetConfirmOpen(false);
   }
 
   const isCompleted = deleteConfirm?.impact?.status === 'completed';
@@ -2411,9 +2590,8 @@ export function TaskDependencyGraph({
     <div className="relative h-full w-full rounded-xl border border-border overflow-hidden" onKeyDownCapture={handleKeyDown}>
       {banner && (
         <div
-          className={`absolute top-3 left-1/2 -translate-x-1/2 z-30 px-3.5 py-2 rounded-lg text-[12.5px] font-medium shadow-md flex items-center gap-2 ${
-            banner.type === 'error' ? 'bg-red-50 border border-red-200 text-red-600' : 'bg-gray-900 text-white'
-          }`}
+          className={`absolute top-3 left-1/2 -translate-x-1/2 z-30 px-3.5 py-2 rounded-lg text-[12.5px] font-medium shadow-md flex items-center gap-2 ${banner.type === 'error' ? 'bg-red-50 border border-red-200 text-red-600' : 'bg-gray-900 text-white'
+            }`}
         >
           {banner.text}
           {banner.type === 'error' && (
@@ -2438,85 +2616,85 @@ export function TaskDependencyGraph({
 
       {/* ── Part 1: left Miro-style toolbar ── */}
       <TooltipProvider>
-      <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1 bg-white border border-gray-200 rounded-xl shadow-md p-1">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={() => { setActiveTool('select'); setPendingLinkSource(null); }}
-                className={`${TOOL_BUTTON_BASE} ${activeTool === 'select' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l7.07 17 2.51-7.39L21 11.07Z"/></svg>
-              </button>
-            }
-          />
-          <TooltipContent side="right">Select</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                disabled={locked}
-                onClick={handleAddTaskClick}
-                className={`${TOOL_BUTTON_BASE} ${activeTool === 'add' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'} disabled:opacity-40 disabled:cursor-not-allowed`}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-              </button>
-            }
-          />
-          <TooltipContent side="right">Add task</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                disabled={locked}
-                onClick={() => { setActiveTool('link'); setPendingLinkSource(null); }}
-                className={`${TOOL_BUTTON_BASE} ${activeTool === 'link' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'} disabled:opacity-40 disabled:cursor-not-allowed`}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-              </button>
-            }
-          />
-          <TooltipContent side="right">Link — Parallel / FS / SS / FF / SF</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={() => setGroupByTrade((v) => !v)}
-                className={`${TOOL_BUTTON_BASE} ${groupByTrade ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-              </button>
-            }
-          />
-          <TooltipContent side="right">Group by trade</TooltipContent>
-        </Tooltip>
-        <div className="h-px bg-gray-200 my-0.5" />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={() => { setLocked((v) => !v); setActiveTool('select'); setPendingLinkSource(null); }}
-                className={`${TOOL_BUTTON_BASE} ${locked ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-              >
-                {locked ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
-                )}
-              </button>
-            }
-          />
-          <TooltipContent side="right">{locked ? 'Unlock canvas' : 'Lock canvas (view only)'}</TooltipContent>
-        </Tooltip>
-      </div>
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1 bg-white border border-gray-200 rounded-xl shadow-md p-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => { setActiveTool('select'); setPendingLinkSource(null); }}
+                  className={`${TOOL_BUTTON_BASE} ${activeTool === 'select' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l7.07 17 2.51-7.39L21 11.07Z" /></svg>
+                </button>
+              }
+            />
+            <TooltipContent side="right">Select</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  disabled={locked}
+                  onClick={handleAddTaskClick}
+                  className={`${TOOL_BUTTON_BASE} ${activeTool === 'add' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
+                </button>
+              }
+            />
+            <TooltipContent side="right">Add task</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  disabled={locked}
+                  onClick={() => { setActiveTool('link'); setPendingLinkSource(null); }}
+                  className={`${TOOL_BUTTON_BASE} ${activeTool === 'link' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2" /><path d="M15 7h2a5 5 0 1 1 0 10h-2" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
+                </button>
+              }
+            />
+            <TooltipContent side="right">Link — Parallel / FS / SS / FF / SF</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => setGroupByTrade((v) => !v)}
+                  className={`${TOOL_BUTTON_BASE} ${groupByTrade ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+                </button>
+              }
+            />
+            <TooltipContent side="right">Group by trade</TooltipContent>
+          </Tooltip>
+          <div className="h-px bg-gray-200 my-0.5" />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => { setLocked((v) => !v); setActiveTool('select'); setPendingLinkSource(null); }}
+                  className={`${TOOL_BUTTON_BASE} ${locked ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  {locked ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 9.9-1" /></svg>
+                  )}
+                </button>
+              }
+            />
+            <TooltipContent side="right">{locked ? 'Unlock canvas' : 'Lock canvas (view only)'}</TooltipContent>
+          </Tooltip>
+        </div>
       </TooltipProvider>
 
       {relationshipPanelMode && (
@@ -2542,35 +2720,34 @@ export function TaskDependencyGraph({
         />
       )}
 
-      {/* Per-phase projected completion — one badge per PHASE_SECTIONS range
+      {/* Per-phase expected completion — one badge per PHASE_SECTIONS range
           that currently has real tasks (Civil today; Structure Internal
-          Works / External Works once tasks exist there again), each the
-          latest CPM-projected finish among THAT phase's own grounded tasks.
-          Always visible (not gated by selection/zoom) since this answers
-          "given what's actually happened so far, when does THIS phase
-          really finish" without opening a single task. Colored the same way
-          the client report's own Schedule Summary treats a delayed vs.
-          on-time project, so the two never read as contradicting each other. */}
+          Works / External Works once tasks exist there again), each just
+          THAT phase's own last task's own date (see phaseCompletions above)
+          — not a CPM projection, so it reads as one plain, literal fact:
+          "here's when the last task in this phase is due," and it moves on
+          its own the moment a new last task is added further down the
+          sequence. Always visible (not gated by selection/zoom). Every
+          phase badge shares the exact same red/warning treatment
+          unconditionally, regardless of that phase's own delay state — kept
+          visually identical across phases on purpose (not delay-conditional
+          per phase) so they read as one consistent status row. */}
       {phaseCompletions.length > 0 && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 flex-wrap justify-center" style={{ maxWidth: '70%' }}>
           {phaseCompletions.map((phase) => (
             <div
               key={phase.label}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11.5px] font-semibold shadow-sm whitespace-nowrap"
-              style={phase.isDelayed
-                ? { borderColor: '#FECACA', background: '#FEF2F2', color: '#B91C1C' }
-                : { borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
+              style={{ borderColor: '#FECACA', background: '#FEF2F2', color: '#B91C1C' }}
               title={phase.isDelayed && phase.plannedCompletion
-                ? `${phase.label}: originally planned to finish ${formatCardDate(phase.plannedCompletion)} — pushed out by current delays`
-                : `${phase.label}: latest projected finish among this phase's own tasks`}
+                ? `Expected ${phase.label} completion date: originally due ${formatCardDate(phase.plannedCompletion)} — pushed out by a delay upstream`
+                : `Expected ${phase.label} completion date — the due date of the last task in this phase's sequence`}
             >
-              {phase.isDelayed && (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-              )}
-              {phase.label}: {formatCardDate(phase.projectedCompletion)}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              Expected {phase.label} completion date: {formatCardDate(phase.projectedCompletion)}
             </div>
           ))}
         </div>
@@ -2578,25 +2755,68 @@ export function TaskDependencyGraph({
 
       {/* ── Top-right utilities: reset layout + board theme (not part of the tool set, kept accessible) ── */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+        <div ref={phaseJumpRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setPhaseJumpOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11.5px] font-medium shadow-sm transition-colors"
+            style={{ borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
+            title="Jump to a phase's first task"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="3" x2="19" y2="3" /><path d="M12 21V8" /><path d="M6 14l6-6 6 6" />
+            </svg>
+            Go to phase
+          </button>
+          {phaseJumpOpen && (
+            <div className="absolute z-30 top-full right-0 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+              {[
+                { label: 'Civil', taskId: '1a' },
+                { label: 'Internal', taskId: '12a' },
+                // No External-phase tasks exist yet — listed for visibility
+                // (matches the Civil/Internal/External framing elsewhere on
+                // this board) but disabled until that phase has real tasks
+                // to jump to.
+                { label: 'External', taskId: null },
+              ].map((phase) => (
+                <button
+                  key={phase.label}
+                  type="button"
+                  disabled={!phase.taskId}
+                  onClick={() => {
+                    if (!phase.taskId) return;
+                    const target = nodes.find((n) => (n.data as { taskId?: string } | undefined)?.taskId === phase.taskId);
+                    if (target) {
+                      const zoom = instanceRef.current?.getViewport().zoom ?? 1;
+                      instanceRef.current?.setCenter(
+                        target.position.x + NODE_WIDTH / 2,
+                        target.position.y + NODE_HEIGHT / 2,
+                        { zoom, duration: 500 }
+                      );
+                    }
+                    setPhaseJumpOpen(false);
+                  }}
+                  className="flex w-full items-center px-3 py-1.5 text-[12.5px] text-left hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                >
+                  {phase.label}
+                  {!phase.taskId && <span className="ml-auto text-[10.5px] text-gray-400">soon</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button
           type="button"
-          onClick={() => instanceRef.current?.fitView({ padding: 0.2, duration: 300 })}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11.5px] font-medium shadow-sm transition-colors"
+          disabled={isRefreshing}
+          onClick={() => startRefresh(() => router.refresh())}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11.5px] font-medium shadow-sm transition-colors disabled:opacity-60"
           style={{ borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
-          title="Re-center the view on every currently-visible task"
+          title="Reload every task, dependency, and delay figure from the database"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
-          Center
-        </button>
-        <button
-          type="button"
-          disabled={locked}
-          onClick={() => setResetConfirmOpen(true)}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11.5px] font-medium shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ borderColor: 'var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
-          Reset Layout
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={isRefreshing ? 'animate-spin' : undefined}>
+            <path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+          {isRefreshing ? 'Refreshing…' : 'Refresh'}
         </button>
         <button
           onClick={() => setDarkCanvas((v) => !v)}
@@ -2605,9 +2825,9 @@ export function TaskDependencyGraph({
           title={darkCanvas ? 'Switch to light board' : 'Switch to dark board'}
         >
           {darkCanvas ? (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
           ) : (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
           )}
         </button>
       </div>
@@ -2623,67 +2843,51 @@ export function TaskDependencyGraph({
         </div>
       ) : (
         <div className="h-full w-full" onDoubleClick={handlePaneDoubleClick}>
-          {/* ── Relationship-type legend — one row per type, same swatches
-              and descriptions the create/edit panel uses ── */}
-          <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1.5 bg-white border border-gray-200 rounded-lg shadow-md px-2.5 py-2 text-[10.5px] text-gray-600 max-w-[210px]">
-            {RELATIONSHIP_TYPES.map((type) => (
-              <div key={type} className="flex items-center gap-1.5">
-                <RelationshipSwatch type={type} />
-                <span>
-                  <span className="font-semibold text-gray-700">{type === 'PARALLEL' ? 'Parallel' : type}</span>
-                  {' — '}
-                  {RELATIONSHIP_DESCRIPTIONS[type]}
-                </span>
-              </div>
-            ))}
-            <div className="pt-0.5 mt-0.5 border-t border-gray-100 text-[9.5px] text-gray-400 leading-snug">
-              Select a link to change its type from the same panel used to create it.
-            </div>
-          </div>
           <GraphActionsContext.Provider value={graphActionsValue}>
-          <ReactFlow
-            nodes={nodesForFlow}
-            edges={flowEdges}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeClick={handleNodeClick}
-            onNodeDoubleClick={handleNodeDoubleClick}
-            onNodeMouseEnter={handleNodeMouseEnter}
-            onNodeMouseLeave={handleNodeMouseLeave}
-            onNodeDragStop={handleNodeDragStop}
-            onEdgesDelete={handleEdgesDelete}
-            onReconnect={handleReconnect}
-            onSelectionChange={handleSelectionChange}
-            onInit={(instance) => { instanceRef.current = instance; onReady?.(instance); }}
-            deleteKeyCode={[]}
-            nodesDraggable={activeTool === 'select' && !locked}
-            nodesConnectable={false}
-            edgesReconnectable={!locked}
-            elementsSelectable={!locked}
-            panOnDrag
-            zoomOnScroll
-            zoomOnPinch
-            fitView
-            proOptions={{ hideAttribution: true }}
-            style={{ backgroundColor: canvas.bg, cursor: activeTool === 'link' ? 'crosshair' : undefined }}
-          >
-            {/* Miro-style square grid instead of the default dot pattern —
+            <ReactFlow
+              nodes={nodesForFlow}
+              edges={flowEdges}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onPaneClick={handlePaneClick}
+              onNodeClick={handleNodeClick}
+              onNodeDoubleClick={handleNodeDoubleClick}
+              onNodeMouseEnter={handleNodeMouseEnter}
+              onNodeMouseLeave={handleNodeMouseLeave}
+              onNodeDragStop={handleNodeDragStop}
+              onEdgesDelete={handleEdgesDelete}
+              onReconnect={handleReconnect}
+              onSelectionChange={handleSelectionChange}
+              onInit={(instance) => { instanceRef.current = instance; onReady?.(instance); }}
+              deleteKeyCode={[]}
+              nodesDraggable={activeTool === 'select' && !locked}
+              nodesConnectable={false}
+              edgesReconnectable={!locked}
+              elementsSelectable={!locked}
+              panOnDrag
+              zoomOnScroll
+              zoomOnPinch
+              fitView
+              proOptions={{ hideAttribution: true }}
+              style={{ backgroundColor: canvas.bg, cursor: activeTool === 'link' ? 'crosshair' : undefined }}
+            >
+              {/* Miro-style square grid instead of the default dot pattern —
                 a faint 20px minor grid plus a slightly more visible 100px
                 major grid every 5 squares, same as Miro's own two-tier
                 canvas grid. */}
-            <Background variant={BackgroundVariant.Lines} color={canvas.grid} gap={20} lineWidth={1} />
-            <Background variant={BackgroundVariant.Lines} color={canvas.gridMajor} gap={100} lineWidth={1} />
-            <Controls showInteractive={false} className="pmc-flow-controls" />
-            <MiniMap
-              className="pmc-flow-minimap"
-              pannable
-              zoomable
-              style={{ width: 130, height: 90 }}
-              nodeColor={() => FORCED_GRAY.dot}
-            />
-          </ReactFlow>
+              <Background variant={BackgroundVariant.Lines} color={canvas.grid} gap={20} lineWidth={1} />
+              <Background variant={BackgroundVariant.Lines} color={canvas.gridMajor} gap={100} lineWidth={1} />
+              <Controls showInteractive={false} className="pmc-flow-controls" />
+              <MiniMap
+                className="pmc-flow-minimap"
+                pannable
+                zoomable
+                style={{ width: 130, height: 90 }}
+                nodeColor={() => FORCED_GRAY.dot}
+              />
+            </ReactFlow>
           </GraphActionsContext.Provider>
         </div>
       )}
@@ -2955,24 +3159,6 @@ export function TaskDependencyGraph({
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline">Cancel</Button>} />
             <Button type="button" variant="destructive" onClick={confirmEdgeDelete}>Remove</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Reset layout confirmation ── */}
-      <Dialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
-        <DialogContent container={fullscreenContainer}>
-          <DialogHeader>
-            <DialogTitle>Reset Layout</DialogTitle>
-            <DialogDescription>
-              Clears every manually-arranged position for the {tasks.length} task{tasks.length === 1 ? '' : 's'} currently shown, reverting them to automatic layout. This can&apos;t be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline">Cancel</Button>} />
-            <Button type="button" variant="destructive" onClick={confirmResetLayout} disabled={resetting}>
-              {resetting ? 'Resetting…' : 'Reset Layout'}
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

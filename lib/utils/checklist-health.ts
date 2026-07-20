@@ -1,4 +1,4 @@
-import type { CompletionStatus, DependencyCategory } from '@/lib/types/hvac';
+import type { CompletionStatus, DependencyCategory } from '@/lib/types/tasks';
 
 // Worst-to-best — mirrors the Gantt "checklist health" spec: an active
 // problem (No, On Hold) always outranks a merely-unresolved one (Pending),

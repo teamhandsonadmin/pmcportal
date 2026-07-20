@@ -1,4 +1,4 @@
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus } from '@/lib/types/tasks';
 
 // Pulled out of lib/data/report.ts (a server-only module that imports
 // prisma/pg) into its own dependency-free file specifically so client

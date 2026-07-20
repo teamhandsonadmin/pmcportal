@@ -4,7 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { AddTaskDependencySchema, UpdateDependencyTypeSchema } from '@/lib/validations/task-dependencies';
 import { wouldCreateCycle } from '@/lib/utils/dependency-graph';
-import type { ActionResult, TaskStatus } from '@/lib/types/hvac';
+import { cascadePlannedDatesFromActualDelay } from '@/app/actions/tasks';
+import type { ActionResult, TaskStatus } from '@/lib/types/tasks';
 
 async function revalidateTaskFamily(taskId: string, dependsOnTaskId: string) {
   revalidatePath(`/tasks/${taskId}`);
@@ -65,6 +66,16 @@ export async function addTaskDependency(
       payload: { taskId, dependsOnTaskId, type },
     },
   }).catch(() => {});
+
+  // If the prerequisite is already running late (a real actualEndDate past
+  // its own dueDate), the new task just joined its FS-downstream closure —
+  // re-run the same push that fires when the prerequisite's delay is first
+  // recorded, so this newly-linked task picks up its share of that delay
+  // immediately instead of only ever reflecting whatever the graph looked
+  // like at the moment the delay was originally saved.
+  if (type === 'FS') {
+    await cascadePlannedDatesFromActualDelay(dependsOnTaskId).catch(() => {});
+  }
 
   await revalidateTaskFamily(taskId, dependsOnTaskId);
   return { success: true };
@@ -219,10 +230,10 @@ export interface TaskDependencyContext {
 }
 
 // Read helper shared by both task-detail pages that render TaskDependencyCard
-// (the main /hvac/[taskId] page and its /overview sub-route) so they don't
+// (the main /tasks/[taskId] page and its /overview sub-route) so they don't
 // each duplicate the same two queries.
 export async function getTaskDependencyContext(taskId: string): Promise<TaskDependencyContext> {
-  const task = await prisma.hvacTask.findUnique({
+  const task = await prisma.task.findUnique({
     where: { id: taskId },
     select: { work: { select: { projectId: true } } },
   });
@@ -238,7 +249,7 @@ export async function getTaskDependencyContext(taskId: string): Promise<TaskDepe
         },
       },
     }),
-    prisma.hvacTask.findMany({
+    prisma.task.findMany({
       where: {
         id: { not: taskId },
         // If this task has no resolvable project (no work, or work has no
@@ -292,7 +303,7 @@ export interface DependencyGraphData {
 // already fetches globally with no project scoping — see CHANGELOG for why).
 export async function getTaskDependencyGraph(projectId?: string): Promise<DependencyGraphData> {
   const [tasks, deps, users] = await Promise.all([
-    prisma.hvacTask.findMany({
+    prisma.task.findMany({
       where: projectId ? { work: { projectId } } : {},
       select: {
         id: true,

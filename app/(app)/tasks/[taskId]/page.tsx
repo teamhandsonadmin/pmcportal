@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { TrelloTaskDetail } from '@/components/hvac/TrelloTaskDetail';
+import { TrelloTaskDetail } from '@/components/tasks/TrelloTaskDetail';
 import { isLocked } from '@/lib/utils/status-rules';
-import type { DependencyCategory, DependencyItem } from '@/lib/types/hvac';
+import type { DependencyCategory, DependencyItem } from '@/lib/types/tasks';
 
 const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'procurement'];
 
@@ -16,7 +16,7 @@ export default async function TaskDetailPage({ params }: Props) {
   const { taskId } = await params;
 
   const [task, rawItems] = await Promise.all([
-    prisma.hvacTask.findUnique({
+    prisma.task.findUnique({
       where: { id: taskId },
       include: { work: { select: { id: true, name: true, color: true, code: true } } },
     }),
@@ -70,7 +70,7 @@ export default async function TaskDetailPage({ params }: Props) {
       ? {
           id: item.completion.id,
           itemId: item.completion.itemId,
-          status: item.completion.status as import('@/lib/types/hvac').CompletionStatus,
+          status: item.completion.status as import('@/lib/types/tasks').CompletionStatus,
           comment: item.completion.comment,
           completedBy: item.completion.completedBy,
           completedAt: item.completion.completedAt,

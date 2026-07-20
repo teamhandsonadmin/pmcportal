@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 const CreateUserSchema = z.object({
   fullName: z.string().min(2).max(100),

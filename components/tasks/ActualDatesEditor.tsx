@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { updateTaskActualDate } from '@/app/actions/hvac-tasks';
+import { updateTaskActualDate } from '@/app/actions/tasks';
 import { formatDate } from '@/lib/utils/format';
 
 interface ActualDateFieldProps {

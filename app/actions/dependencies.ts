@@ -2,8 +2,8 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { UpdateDependencySchema } from '@/lib/validations/hvac';
-import type { ActionResult, CompletionStatus, DependencyCategory } from '@/lib/types/hvac';
+import { UpdateDependencySchema } from '@/lib/validations/tasks';
+import type { ActionResult, CompletionStatus, DependencyCategory } from '@/lib/types/tasks';
 
 function revalidateTask(taskId: string) {
   revalidatePath(`/tasks/${taskId}/dependencies`);

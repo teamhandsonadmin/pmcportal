@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { formatRelativeTime } from '@/lib/utils/format';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
-import { STATUS_CHIP } from '@/components/hvac/StatusDropdown';
-import type { ActivityEvent, CompletionStatus, TaskStatus } from '@/lib/types/hvac';
+import { STATUS_CHIP } from '@/components/tasks/StatusDropdown';
+import type { ActivityEvent, CompletionStatus, TaskStatus } from '@/lib/types/tasks';
 
 interface RecentActivityFeedProps {
   events: ActivityEvent[];

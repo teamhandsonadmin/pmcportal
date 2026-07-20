@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { DependencyChecklist } from '@/components/hvac/DependencyChecklist';
+import { DependencyChecklist } from '@/components/tasks/DependencyChecklist';
 import { isLocked } from '@/lib/utils/status-rules';
-import type { DependencyCategory, DependencyItem } from '@/lib/types/hvac';
+import type { DependencyCategory, DependencyItem } from '@/lib/types/tasks';
 
 const CATEGORIES: DependencyCategory[] = ['architect', 'client', 'consultant', 'contractor', 'procurement'];
 
@@ -16,7 +16,7 @@ export default async function TaskDependenciesPage({ params }: Props) {
   const { taskId } = await params;
 
   const [task, rawItems] = await Promise.all([
-    prisma.hvacTask.findUnique({ where: { id: taskId }, select: { status: true } }),
+    prisma.task.findUnique({ where: { id: taskId }, select: { status: true } }),
     prisma.dependencyItem.findMany({
       where: { taskId },
       include: { completion: true, _count: { select: { comments: true } } },
@@ -39,7 +39,7 @@ export default async function TaskDependenciesPage({ params }: Props) {
       ? {
           id: item.completion.id,
           itemId: item.completion.itemId,
-          status: item.completion.status as import('@/lib/types/hvac').CompletionStatus,
+          status: item.completion.status as import('@/lib/types/tasks').CompletionStatus,
           comment: item.completion.comment,
           completedBy: item.completion.completedBy,
           completedAt: item.completion.completedAt,

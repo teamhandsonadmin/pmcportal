@@ -8,7 +8,7 @@ import { GanttTimelineHeader } from '@/components/gantt/GanttTimelineHeader';
 import { GanttDetailPopup } from '@/components/gantt/GanttDetailPopup';
 import { computeTimelineRange, buildTimelineScale, ZOOM_PX_PER_DAY, TIMELINE_HEADER_HEIGHT, type ZoomLevel } from '@/components/gantt/ganttLayout';
 import type { TaskRow } from '@/components/tasks/TasksExplorer';
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus } from '@/lib/types/tasks';
 import type { TaskDelayInfo } from '@/lib/utils/delay-engine';
 
 const STATUSES: TaskStatus[] = ['draft', 'ready', 'in_progress', 'on_hold', 'blocked', 'completed'];

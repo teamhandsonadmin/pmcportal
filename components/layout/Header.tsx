@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { getNotificationsPanelData } from '@/app/actions/notifications';
-import { STATUS_CHIP } from '@/components/hvac/StatusDropdown';
+import { STATUS_CHIP } from '@/components/tasks/StatusDropdown';
 import type { NeedsAttentionItem, UpcomingTaskItem } from '@/lib/data/notifications';
 
 type Tab = 'attention' | 'upcoming';

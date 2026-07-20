@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { CompletionStatus } from '@/lib/types/hvac';
+import type { CompletionStatus } from '@/lib/types/tasks';
 
 /* ── Shared 6-state status dropdown ──────────────────────────
    Used by both checklist UIs (TrelloTaskDetail's inline ChecklistCard on
-   /hvac/[taskId], and ChecklistItem on /hvac/[taskId]/dependencies) so the
+   /tasks/[taskId], and ChecklistItem on /tasks/[taskId]/dependencies) so the
    two don't drift into two different pieces of dropdown code again. */
 
 export const STATUS_CHIP: Record<CompletionStatus, { label: string; bg: string; text: string; dot: string }> = {
@@ -18,7 +18,7 @@ export const STATUS_CHIP: Record<CompletionStatus, { label: string; bg: string; 
 };
 export const STATUS_ORDER: CompletionStatus[] = ['YES', 'PROCEED', 'PENDING', 'ON_HOLD', 'REVISIONS', 'NO'];
 
-// Clears vs. blocks — mirrors isItemDone() in lib/types/hvac.ts.
+// Clears vs. blocks — mirrors isItemDone() in lib/types/tasks.ts.
 export const CLEARING_STATUSES: CompletionStatus[] = ['YES', 'PROCEED'];
 
 function WarningIcon({ size = 10 }: { size?: number }) {

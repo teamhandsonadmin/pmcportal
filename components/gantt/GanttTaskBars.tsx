@@ -1,11 +1,11 @@
 import { addDays, differenceInCalendarDays } from 'date-fns';
 import type { TaskDelayInfo } from '@/lib/utils/delay-engine';
 import { STATUS_COLOR_GROUP, STATUS_COLOR_PALETTE } from '@/lib/utils/status-rules';
-import { STATUS_CHIP } from '@/components/hvac/StatusDropdown';
+import { STATUS_CHIP } from '@/components/tasks/StatusDropdown';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { checklistHealthByCategory } from '@/lib/utils/checklist-health';
 import type { TaskRow } from '@/components/tasks/TasksExplorer';
-import type { DependencyCategory } from '@/lib/types/hvac';
+import type { DependencyCategory } from '@/lib/types/tasks';
 import { ROW_HEIGHT, type TimelineScale } from '@/components/gantt/ganttLayout';
 
 const HEALTH_BOX_SIZE = 9;

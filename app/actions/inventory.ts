@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { CreateInventoryItemSchema, CreateInventoryTransactionSchema } from '@/lib/validations/inventory';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 export async function createInventoryItem(
   _prevState: ActionResult<{ itemId: string }>,

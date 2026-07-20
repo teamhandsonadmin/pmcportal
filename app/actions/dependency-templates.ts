@@ -2,8 +2,8 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import { AddTemplateItemSchema } from '@/lib/validations/hvac';
-import type { ActionResult } from '@/lib/types/hvac';
+import { AddTemplateItemSchema } from '@/lib/validations/tasks';
+import type { ActionResult } from '@/lib/types/tasks';
 
 export async function addTemplateItem(formData: FormData): Promise<ActionResult> {
   const parsed = AddTemplateItemSchema.safeParse({
@@ -88,7 +88,7 @@ export async function reorderTemplateItem(id: string, direction: 'up' | 'down'):
 export async function applyTemplateToProject(projectId: string): Promise<ActionResult<{ created: number }>> {
   const [templateItems, tasks] = await Promise.all([
     prisma.dependencyTemplateItem.findMany(),
-    prisma.hvacTask.findMany({
+    prisma.task.findMany({
       where: { work: { projectId } },
       select: { id: true, dependencyItems: { select: { category: true, itemLabel: true } } },
     }),

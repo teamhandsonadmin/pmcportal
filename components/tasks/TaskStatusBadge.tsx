@@ -1,4 +1,4 @@
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus } from '@/lib/types/tasks';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
 
 const statusConfig: Record<TaskStatus, { dot: string; bg: string; text: string }> = {

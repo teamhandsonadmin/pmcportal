@@ -1,4 +1,4 @@
-import type { TaskStatus, DependencyType } from '@/lib/types/hvac';
+import type { TaskStatus, DependencyType } from '@/lib/types/tasks';
 
 export const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   draft:       [],

@@ -105,7 +105,7 @@ const FORECAST_HISTORY_DAYS = 10;
 async function seedTask(projectName: string, workId: string, workCode: string, spec: TaskSpec) {
   const templateItems = await prisma.dependencyTemplateItem.findMany({ orderBy: { sortOrder: 'asc' } });
 
-  const task = await prisma.hvacTask.create({
+  const task = await prisma.task.create({
     data: {
       taskId: `${workCode}-${String(taskCounter++).padStart(3, '0')}`,
       taskName: spec.name,
@@ -150,7 +150,7 @@ async function seedTask(projectName: string, workId: string, workCode: string, s
   // Advance status beyond the DB trigger's auto-computed state where the task
   // is meant to represent further progress (in_progress / on_hold / completed).
   if (spec.finalStatus === 'in_progress' || spec.finalStatus === 'on_hold' || spec.finalStatus === 'completed') {
-    await prisma.hvacTask.update({ where: { id: task.id }, data: { status: spec.finalStatus } });
+    await prisma.task.update({ where: { id: task.id }, data: { status: spec.finalStatus } });
     await prisma.activityLog.create({
       data: { taskId: task.id, actionType: 'status_change', payload: { from: 'ready', to: spec.finalStatus } },
     });
@@ -160,7 +160,7 @@ async function seedTask(projectName: string, workId: string, workCode: string, s
 }
 
 async function seedTasks(project: { name: string }, works: { id: string; code: string }[], users: { id: string }[]) {
-  const existingTasks = await prisma.hvacTask.count();
+  const existingTasks = await prisma.task.count();
   if (existingTasks > 3) {
     console.log('Tasks already seeded, skipping.');
     return;
@@ -217,7 +217,7 @@ async function main() {
     update: { name: 'HVAC', color: '#6366F1' },
     create: { name: 'HVAC', code: 'HVAC', description: 'Heating, Ventilation & Air Conditioning works', color: '#6366F1' },
   });
-  const updated = await prisma.hvacTask.updateMany({ where: { workId: null }, data: { workId: hvac.id } });
+  const updated = await prisma.task.updateMany({ where: { workId: null }, data: { workId: hvac.id } });
   console.log(`Linked ${updated.count} pre-existing task(s) to HVAC work.`);
 
   const users = await seedUsers();

@@ -1,4 +1,4 @@
-import type { TaskStatus, DependencyType } from '@/lib/types/hvac';
+import type { TaskStatus, DependencyType } from '@/lib/types/tasks';
 import { addWorkingDaysSync, countWorkingDaysBetween } from '@/lib/utils/working-days';
 
 // ── ES/EF approach (added when FS/SS/FF/SF dependency types were introduced) ──
@@ -38,9 +38,9 @@ import { addWorkingDaysSync, countWorkingDaysBetween } from '@/lib/utils/working
 // never used the new types, this produces byte-identical results to the old
 // FS-only version.
 
-// `taskId` here must be HvacTask.id (the UUID primary key), NOT the
-// human-readable business code stored in HvacTask.taskId (e.g. "HVAC-003").
-// TaskDependency.taskId/dependsOnTaskId are UUID foreign keys to HvacTask.id,
+// `taskId` here must be Task.id (the UUID primary key), NOT the
+// human-readable business code stored in Task.taskId (e.g. "HVAC-003").
+// TaskDependency.taskId/dependsOnTaskId are UUID foreign keys to Task.id,
 // so the dependency graph only resolves using that value. Callers that want
 // to display the human-readable code should keep a separate
 // id -> {taskId, taskName} lookup and join it in after calling this.

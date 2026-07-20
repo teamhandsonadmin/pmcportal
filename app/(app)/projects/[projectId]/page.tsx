@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { isItemDone } from '@/lib/types/hvac';
+import { isItemDone } from '@/lib/types/tasks';
 import { getProjectSftProgress } from '@/lib/data/sft';
 
 export const dynamic = 'force-dynamic';

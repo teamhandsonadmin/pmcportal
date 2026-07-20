@@ -8,8 +8,8 @@ import {
   reorderTemplateItem,
   applyTemplateToProject,
 } from '@/app/actions/dependency-templates';
-import { CATEGORY_COLORS } from '@/lib/types/hvac';
-import type { DependencyCategory } from '@/lib/types/hvac';
+import { CATEGORY_COLORS } from '@/lib/types/tasks';
+import type { DependencyCategory } from '@/lib/types/tasks';
 
 export interface TemplateItem {
   id: string;

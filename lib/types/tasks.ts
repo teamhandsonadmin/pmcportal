@@ -64,7 +64,7 @@ export interface Work {
   updatedAt: Date;
 }
 
-export interface HvacTask {
+export interface Task {
   id: string;
   taskId: string;
   taskName: string;

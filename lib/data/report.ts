@@ -152,7 +152,7 @@ export async function getProjectReportData(
   const [project, scopedWork, tasks, sft] = await Promise.all([
     prisma.project.findUnique({ where: { id: projectId }, select: { name: true, reportSentAt: true } }),
     workId ? prisma.work.findUnique({ where: { id: workId }, select: { name: true } }) : Promise.resolve(null),
-    prisma.hvacTask.findMany({
+    prisma.task.findMany({
       where: {
         work: { projectId },
         deletedAt: null,

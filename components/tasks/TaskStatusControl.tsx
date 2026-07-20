@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
-import { updateTaskStatus } from '@/app/actions/hvac-tasks';
+import { updateTaskStatus } from '@/app/actions/tasks';
 import { allowedTransitions, TRANSITION_LABELS } from '@/lib/utils/status-rules';
-import type { TaskStatus } from '@/lib/types/hvac';
+import type { TaskStatus } from '@/lib/types/tasks';
 
 interface TaskStatusControlProps {
   taskId: string;

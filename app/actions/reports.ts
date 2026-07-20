@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { getCurrentAdminProfile } from '@/lib/auth/current-admin';
 import { getProjectClients } from '@/lib/data/report';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 export interface SendReportResult {
   recipientCount: number;

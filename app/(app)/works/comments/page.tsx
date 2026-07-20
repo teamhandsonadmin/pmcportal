@@ -1,5 +1,5 @@
 import { getAllCommentThreads } from '@/lib/data/comments';
-import { CommentsExplorer } from '@/components/hvac/CommentsExplorer';
+import { CommentsExplorer } from '@/components/tasks/CommentsExplorer';
 
 export const dynamic = 'force-dynamic';
 

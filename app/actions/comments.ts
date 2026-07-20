@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { getCurrentUserProfile } from '@/lib/auth/current-user';
 import { getCommentThread, type CommentThread } from '@/lib/data/comment-thread';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 export interface CreatedComment {
   id: string;

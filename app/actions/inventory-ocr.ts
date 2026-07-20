@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import { ensureInventoryDocumentsBucket, uploadInventoryDocument } from '@/lib/supabase/admin';
 import { extractInvoiceData, type ExtractedInvoiceLine } from '@/lib/ocr/extractInvoiceData';
 import { ConfirmIntakeLinesSchema } from '@/lib/validations/inventory';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png'];

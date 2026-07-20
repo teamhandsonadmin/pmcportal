@@ -1,7 +1,7 @@
 import { ChecklistItem } from './ChecklistItem';
-import type { DependencyItem, DependencyCategory } from '@/lib/types/hvac';
-import { CATEGORY_COLORS } from '@/lib/types/hvac';
-import { isItemDone } from '@/lib/types/hvac';
+import type { DependencyItem, DependencyCategory } from '@/lib/types/tasks';
+import { CATEGORY_COLORS } from '@/lib/types/tasks';
+import { isItemDone } from '@/lib/types/tasks';
 
 const CATEGORY_LABELS: Record<DependencyCategory, string> = {
   architect:  'Architect',

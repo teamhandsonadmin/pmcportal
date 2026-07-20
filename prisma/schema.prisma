@@ -146,7 +146,7 @@ model Project {
   // Null means "not configured" — the mobile app falls back to its own
   // hardcoded default rather than treating null as a zero-radius site.
   siteRadiusMeters Int? @map("site_radius_meters")
-  // Project-wide SFT target — distinct from any individual HvacTask.totalSft
+  // Project-wide SFT target — distinct from any individual Task.totalSft
   // (a per-task target). Used by lib/data/sft.ts's getProjectSftProgress()
   // as the denominator for the project-level "X of Y sqft done" rollup.
   totalSft  Decimal? @map("total_sft") @db.Decimal(10, 2)
@@ -224,12 +224,12 @@ model Work {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
   project     Project?   @relation(fields: [projectId], references: [id])
-  tasks       HvacTask[]
+  tasks       Task[]
 
   @@map("works")
 }
 
-model HvacTask {
+model Task {
   id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   taskId      String     @unique @map("task_id") @db.VarChar(20)
   taskName    String     @map("task_name")
@@ -238,10 +238,30 @@ model HvacTask {
   status      TaskStatus @default(draft)
   assignedTo  String?    @map("assigned_to") @db.Uuid
   createdBy   String?    @map("created_by") @db.Uuid
+  // The original commitment — set at creation, and by a deliberate manual
+  // edit in the Edit Task dialog, but NEVER overwritten by the auto-cascade
+  // (see cascadePlannedDatesFromActualDelay). This is what the flowchart's
+  // yellow pill always shows — "what was originally committed to."
   plannedStartDate DateTime? @map("planned_start_date") @db.Date
   dueDate     DateTime?  @map("due_date") @db.Date
   actualStartDate DateTime? @map("actual_start_date") @db.Date
   actualEndDate   DateTime? @map("actual_end_date") @db.Date
+  // The live/working schedule after an upstream task's real actual-date
+  // delay cascaded through an FS link (see cascadePlannedDatesFromActualDelay
+  // in app/actions/tasks.ts) — null until the first cascade touches
+  // this task. Kept SEPARATE from plannedStartDate/dueDate above on purpose:
+  // overwriting the original commitment directly (an earlier version of this
+  // feature did exactly that) left nothing to compare the delay against —
+  // the "original" and "current" pill ended up showing the identical date.
+  currentPlannedStartDate DateTime? @map("current_planned_start_date") @db.Date
+  currentDueDate          DateTime? @map("current_due_date") @db.Date
+  // How many working days the most recent cascade pushed this task by (see
+  // currentDueDate above) — NOT a live CPM computation, just the delta from
+  // that one push. Drives the flowchart's red delay badge for a task that
+  // has no actual date of its own yet. Cleared if this task's own actual
+  // dates get entered directly, since its own delay (dueDate vs
+  // actualEndDate) becomes the true signal at that point.
+  cascadeDelayDays Int? @map("cascade_delay_days")
   workId      String?    @map("work_id") @db.Uuid
   taskTypeId  String?    @map("task_type_id") @db.Uuid
   totalSft    Decimal?   @map("total_sft") @db.Decimal(10, 2)
@@ -275,7 +295,7 @@ model HvacTask {
   parallelLinksB     TaskParallelLink[]  @relation("ParallelLinkB")
   dailyProgressReports DailyProgressReport[]
 
-  @@map("hvac_tasks")
+  @@map("tasks")
   @@index([workId])
   @@index([status])
   @@index([taskTypeId])
@@ -291,7 +311,7 @@ model TaskType {
   defaultDurationDays Int        @map("default_duration_days")
   createdAt           DateTime   @default(now()) @map("created_at")
 
-  tasks               HvacTask[]
+  tasks               Task[]
 
   @@map("task_types")
 }
@@ -308,8 +328,8 @@ model TaskDependency {
   type            DependencyType @default(FS)
   createdAt       DateTime       @default(now()) @map("created_at")
 
-  task          HvacTask @relation("TaskBlockedBy", fields: [taskId], references: [id], onDelete: Cascade)
-  dependsOnTask HvacTask @relation("TaskBlocks", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+  task          Task @relation("TaskBlockedBy", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask Task @relation("TaskBlocks", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
 
   @@map("task_dependencies")
   @@unique([taskId, dependsOnTaskId])
@@ -326,9 +346,9 @@ model TaskDependency {
 model TaskParallelLink {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   taskAId   String   @map("task_a_id") @db.Uuid
-  taskA     HvacTask @relation("ParallelLinkA", fields: [taskAId], references: [id], onDelete: Cascade)
+  taskA     Task @relation("ParallelLinkA", fields: [taskAId], references: [id], onDelete: Cascade)
   taskBId   String   @map("task_b_id") @db.Uuid
-  taskB     HvacTask @relation("ParallelLinkB", fields: [taskBId], references: [id], onDelete: Cascade)
+  taskB     Task @relation("ParallelLinkB", fields: [taskBId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("task_parallel_links")
@@ -346,7 +366,7 @@ model DependencyItem {
   sortOrder   Int                @default(0) @map("sort_order") @db.SmallInt
   createdAt   DateTime           @default(now()) @map("created_at")
 
-  task       HvacTask             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task       Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
   completion DependencyCompletion?
   comments   Comment[]
 
@@ -403,7 +423,7 @@ model ActivityLog {
   payload    Json?
   createdAt  DateTime @default(now()) @map("created_at")
 
-  task HvacTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  task Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@map("activity_log")
   @@index([taskId])
@@ -451,7 +471,7 @@ model SftProgressEntry {
   recordedBy   String?   @map("recorded_by") @db.Uuid
   createdAt    DateTime  @default(now()) @map("created_at")
 
-  task HvacTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, entryDate])
   @@map("sft_progress_entries")
@@ -561,7 +581,7 @@ model DailyProgressReport {
   projectId String?   @map("project_id") @db.Uuid
   project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   taskId    String?   @map("task_id") @db.Uuid
-  task      HvacTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  task      Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   workType           String            @map("work_type")
   workDescription    String            @map("work_description") @db.Text

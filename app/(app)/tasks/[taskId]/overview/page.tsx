@@ -1,18 +1,18 @@
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { TaskStatusControl } from '@/components/hvac/TaskStatusControl';
-import { DependencyProgress, OverallProgress } from '@/components/hvac/DependencyProgress';
-import { SftProgressCard } from '@/components/hvac/SftProgressCard';
-import { TaskDependencyCard } from '@/components/hvac/TaskDependencyCard';
-import { PlannedDatesEditor } from '@/components/hvac/PlannedDatesEditor';
-import { ActualDateField } from '@/components/hvac/ActualDatesEditor';
-import { ScheduleImpactPanel } from '@/components/hvac/ScheduleImpactPanel';
+import { TaskStatusControl } from '@/components/tasks/TaskStatusControl';
+import { DependencyProgress, OverallProgress } from '@/components/tasks/DependencyProgress';
+import { SftProgressCard } from '@/components/tasks/SftProgressCard';
+import { TaskDependencyCard } from '@/components/tasks/TaskDependencyCard';
+import { PlannedDatesEditor } from '@/components/tasks/PlannedDatesEditor';
+import { ActualDateField } from '@/components/tasks/ActualDatesEditor';
+import { ScheduleImpactPanel } from '@/components/tasks/ScheduleImpactPanel';
 import { getTaskDependencyContext } from '@/app/actions/task-dependencies';
 import { getTaskScheduleImpact } from '@/lib/data/delay-engine';
 import { isLocked } from '@/lib/utils/status-rules';
 import { formatDate, formatDateKey, formatDateTime } from '@/lib/utils/format';
-import type { CategoryProgress } from '@/lib/types/hvac';
-import { isItemDone } from '@/lib/types/hvac';
+import type { CategoryProgress } from '@/lib/types/tasks';
+import { isItemDone } from '@/lib/types/tasks';
 
 interface Props {
   params: Promise<{ taskId: string }>;
@@ -24,7 +24,7 @@ export default async function TaskOverviewPage({ params }: Props) {
   const { taskId } = await params;
 
   const [task, depItems, sftEntries, dependencyContext, scheduleImpact] = await Promise.all([
-    prisma.hvacTask.findUnique({ where: { id: taskId } }),
+    prisma.task.findUnique({ where: { id: taskId } }),
     prisma.dependencyItem.findMany({
       where: { taskId },
       include: { completion: true },

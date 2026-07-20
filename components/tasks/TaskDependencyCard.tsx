@@ -5,10 +5,10 @@ import { useActionState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TaskStatusBadge } from '@/components/hvac/TaskStatusBadge';
+import { TaskStatusBadge } from '@/components/tasks/TaskStatusBadge';
 import { addTaskDependency, removeTaskDependency } from '@/app/actions/task-dependencies';
 import type { TaskDependencyContextItem } from '@/app/actions/task-dependencies';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 const initialState: ActionResult = { success: true };
 

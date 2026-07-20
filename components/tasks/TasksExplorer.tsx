@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { TaskDependencyGraph, type GraphEdgeInput } from '@/components/tasks/TaskDependencyGraph';
 import { BulkDeleteDialog } from '@/components/tasks/BulkDeleteDialog';
-import type { TaskTypeOption } from '@/components/hvac/TaskTypeManager';
+import type { TaskTypeOption } from '@/components/tasks/TaskTypeManager';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
 import type { TaskDelayInfo } from '@/lib/utils/delay-engine';
-import type { TaskStatus, DependencyCategory, CompletionStatus } from '@/lib/types/hvac';
+import type { TaskStatus, DependencyCategory, CompletionStatus } from '@/lib/types/tasks';
 
 export interface TaskRow {
   id: string;
@@ -24,6 +24,9 @@ export interface TaskRow {
   dueDate: Date | null;
   actualStartDate: Date | null;
   actualEndDate: Date | null;
+  currentPlannedStartDate: Date | null;
+  currentDueDate: Date | null;
+  cascadeDelayDays: number | null;
   progressPct: number;
   overdue: boolean;
   assigneeName: string | null;
@@ -180,6 +183,9 @@ export function TasksExplorer({
         dueDate: r.dueDate,
         actualStartDate: r.actualStartDate,
         actualEndDate: r.actualEndDate,
+        currentPlannedStartDate: r.currentPlannedStartDate,
+        currentDueDate: r.currentDueDate,
+        cascadeDelayDays: r.cascadeDelayDays,
         manualPositionX: r.manualPositionX,
         manualPositionY: r.manualPositionY,
         prerequisiteCount: r.prerequisiteCount,

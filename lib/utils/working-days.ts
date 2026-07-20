@@ -11,16 +11,6 @@ export const getAllBlockedDates = cache(async function getAllBlockedDates(
 ): Promise<Set<string>> {
   const blocked = new Set<string>();
 
-  // Sundays — computed directly, no query needed. UTC-anchored throughout so
-  // this doesn't depend on the server process's local timezone.
-  const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-  const daysInYear = isLeap ? 366 : 365;
-  const cursor = new Date(Date.UTC(year, 0, 1));
-  for (let i = 0; i < daysInYear; i++) {
-    if (cursor.getUTCDay() === 0) blocked.add(formatDateKey(cursor, { utc: true }));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
   // Holidays for that year — a Postgres DATE column, no time/timezone of its
   // own; Prisma returns these as UTC-midnight Date objects, hence utc: true.
   const holidays = await prisma.holiday.findMany({

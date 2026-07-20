@@ -80,10 +80,6 @@ export function WorkingDayPicker({ name, id, defaultValue, value, placeholder, m
 
   function isDisabled(date: Date): boolean {
     if (minDate && date < minDate) return true;
-    // Sunday is instant/synchronous — never waits on the year's fetch to
-    // complete, and never mis-reports every day as blocked (or open) just
-    // because that year's holiday fetch hasn't resolved yet.
-    if (date.getDay() === 0) return true;
     const yearSet = blockedByYear[date.getFullYear()];
     return yearSet ? yearSet.has(formatDateKey(date)) : false;
   }

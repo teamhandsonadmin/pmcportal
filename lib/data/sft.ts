@@ -17,9 +17,9 @@ export interface ProjectSftProgress {
   byWork: WorkSftBreakdown[];
 }
 
-// HvacTask has no direct projectId of its own — the only path from a task to
+// Task has no direct projectId of its own — the only path from a task to
 // its project is task.work.projectId, confirmed against prisma/schema.prisma
-// before writing this (Work.projectId -> Project, HvacTask.workId -> Work).
+// before writing this (Work.projectId -> Project, Task.workId -> Work).
 // SftProgressEntry.sftCompleted is additive (see the model's own doc
 // comment) — summing every entry for every task under every Work in this
 // project is the correct "completed so far" figure, the same join path
@@ -55,7 +55,7 @@ export async function getProjectSftProgress(projectId: string): Promise<ProjectS
           where: { task: { workId: w.id } },
           _sum: { sftCompleted: true },
         }),
-        prisma.hvacTask.findMany({ where: { workId: w.id }, select: { totalSft: true } }),
+        prisma.task.findMany({ where: { workId: w.id }, select: { totalSft: true } }),
       ]);
       const workCompleted = workSftAgg._sum.sftCompleted != null ? Number(workSftAgg._sum.sftCompleted) : 0;
       const workTargetSum = tasks.reduce((s, t) => s + (t.totalSft != null ? Number(t.totalSft) : 0), 0);

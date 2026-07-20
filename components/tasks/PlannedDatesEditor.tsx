@@ -7,7 +7,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { WorkingDayPicker } from '@/components/ui/working-day-picker';
-import { updateTaskPlannedDates } from '@/app/actions/hvac-tasks';
+import { updateTaskPlannedDates } from '@/app/actions/tasks';
 import { formatDateKey } from '@/lib/utils/format';
 
 function parseDateKey(value: string): Date {

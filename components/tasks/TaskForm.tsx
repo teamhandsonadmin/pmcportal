@@ -6,11 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { WorkingDayPicker } from '@/components/ui/working-day-picker';
-import { TaskTypeManager, type TaskTypeOption } from '@/components/hvac/TaskTypeManager';
-import { createHvacTask } from '@/app/actions/hvac-tasks';
+import { TaskTypeManager, type TaskTypeOption } from '@/components/tasks/TaskTypeManager';
+import { createTask } from '@/app/actions/tasks';
 import { computeDueDate } from '@/app/actions/working-days';
 import { formatDateKey } from '@/lib/utils/format';
-import type { ActionResult } from '@/lib/types/hvac';
+import type { ActionResult } from '@/lib/types/tasks';
 
 const initialState: ActionResult<{ taskId: string }> = { success: true };
 
@@ -32,7 +32,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export function TaskForm({ workId, assignableUsers, taskTypes: initialTaskTypes }: TaskFormProps) {
-  const [state, formAction, isPending] = useActionState(createHvacTask, initialState);
+  const [state, formAction, isPending] = useActionState(createTask, initialState);
   const [taskTypes, setTaskTypes] = useState(initialTaskTypes);
   const [plannedStart, setPlannedStart] = useState<Date | undefined>();
   const [taskTypeId, setTaskTypeId] = useState('');

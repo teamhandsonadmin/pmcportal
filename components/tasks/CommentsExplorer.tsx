@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { STATUS_CHIP } from '@/components/hvac/StatusDropdown';
-import { CommentThreadModal } from '@/components/hvac/CommentThreadModal';
+import { STATUS_CHIP } from '@/components/tasks/StatusDropdown';
+import { CommentThreadModal } from '@/components/tasks/CommentThreadModal';
 import type { CommentThreadPreview } from '@/lib/data/comments';
-import type { DependencyCategory } from '@/lib/types/hvac';
+import type { DependencyCategory } from '@/lib/types/tasks';
 
 // Duplicated rather than shared, matching this codebase's established
 // convention for this exact map (already independently defined in

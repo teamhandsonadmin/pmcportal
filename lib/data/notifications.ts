@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { addDays, startOfDay } from 'date-fns';
 import { upcomingDateLabel } from '@/lib/data/report';
-import type { CompletionStatus } from '@/lib/types/hvac';
+import type { CompletionStatus } from '@/lib/types/tasks';
 
 // "Needs attention" = anything except the two clearing statuses (YES,
 // PROCEED) — kept in exact sync with site-engineer-app's
@@ -89,7 +89,7 @@ export async function getUpcomingTasksForNotifications(): Promise<UpcomingTaskIt
   const today = startOfDay(new Date());
   const windowEnd = addDays(today, 30);
 
-  const tasks = await prisma.hvacTask.findMany({
+  const tasks = await prisma.task.findMany({
     where: {
       deletedAt: null,
       plannedStartDate: { gte: today, lte: windowEnd },

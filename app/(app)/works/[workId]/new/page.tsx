@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
-import { TaskForm } from '@/components/hvac/TaskForm';
+import { TaskForm } from '@/components/tasks/TaskForm';
 import { getAssignableUsers } from '@/app/actions/users';
 
 interface Props {

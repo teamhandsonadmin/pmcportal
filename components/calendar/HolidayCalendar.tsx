@@ -39,9 +39,6 @@ function daysInMonth(year: number, month: number) {
 function firstDay(year: number, month: number) {
   return new Date(year, month, 1).getDay();
 }
-function isSunday(year: number, month: number, day: number) {
-  return new Date(year, month, day).getDay() === 0;
-}
 function toDateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
@@ -49,13 +46,8 @@ function formatDisplay(dateStr: string) {
   const [y, m, d] = dateStr.split('-').map(Number);
   return `${String(d).padStart(2, '0')} ${MONTHS[m - 1].slice(0, 3)} ${y}`;
 }
-function countSundaysInYear(year: number) {
-  let count = 0;
-  for (let m = 0; m < 12; m++) {
-    const dim = daysInMonth(year, m);
-    for (let d = 1; d <= dim; d++) if (isSunday(year, m, d)) count++;
-  }
-  return count;
+function daysInYear(year: number) {
+  return ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0) ? 366 : 365;
 }
 
 const BLANK_FORM = { name: '', date: '', type: 'national_holiday' as HolidayTypeValue };
@@ -81,19 +73,7 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
     return map;
   }, [holidays]);
 
-  const sundayCount = useMemo(() => countSundaysInYear(year), [year]);
-
-  const workingDays = useMemo(() => {
-    let total = 0;
-    const hDates = new Set(holidays.map((h) => h.date));
-    for (let m = 0; m < 12; m++) {
-      const dim = daysInMonth(year, m);
-      for (let d = 1; d <= dim; d++) {
-        if (!isSunday(year, m, d) && !hDates.has(toDateStr(year, m, d))) total++;
-      }
-    }
-    return total;
-  }, [holidays, year]);
+  const workingDays = useMemo(() => daysInYear(year) - holidays.length, [holidays, year]);
 
   const filtered = useMemo(() =>
     holidays
@@ -274,11 +254,10 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
       </div>
 
       {/* ── Summary Cards ─────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Total Holidays',          value: holidays.length + sundayCount, sub: 'Sundays + custom',                    bg: '#FEF2F2', border: '#FECACA', text: '#991B1B' },
-          { label: 'Working Days This Year',  value: workingDays,                   sub: `Excl. ${holidays.length} custom`,      bg: '#F0FDF4', border: '#BBF7D0', text: '#166534' },
-          { label: 'Sundays Auto-Blocked',    value: sundayCount,                   sub: `Every Sunday in ${year}`,              bg: '#FEF2F2', border: '#FCA5A5', text: '#DC2626' },
+          { label: 'Days This Year',          value: daysInYear(year),              sub: `Calendar year ${year}`,                bg: '#F9FAFB', border: '#E5E7EB', text: '#374151' },
+          { label: 'Working Days This Year',  value: workingDays,                   sub: `Excl. ${holidays.length} holiday${holidays.length === 1 ? '' : 's'}`, bg: '#F0FDF4', border: '#BBF7D0', text: '#166534' },
           { label: 'Custom Holidays Added',   value: holidays.length,               sub: 'National, Festival, etc.',             bg: '#FFF7ED', border: '#FED7AA', text: '#9A3412' },
         ].map((c) => (
           <div key={c.label} className="rounded-xl border p-5"
@@ -295,7 +274,6 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
         style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Legend</span>
         {[
-          { color: '#DC2626', bg: '#FEF2F2', label: 'Sunday (Auto-blocked)' },
           { color: '#EA580C', bg: '#FFF7ED', label: 'National Holiday' },
           { color: '#8B5CF6', bg: '#FAF5FF', label: 'Festival Holiday' },
           { color: '#22C55E', bg: '#F0FDF4', label: 'Regional Holiday' },
@@ -307,7 +285,7 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
             <span className="text-[11.5px] text-gray-600">{l.label}</span>
           </div>
         ))}
-        <span className="ml-auto text-[11px] text-gray-400">Click any non-Sunday day to add a holiday</span>
+        <span className="ml-auto text-[11px] text-gray-400">Click any day to add a holiday</span>
       </div>
 
       {/* ── Year View — 4×3 month grid ────────────────────── */}
@@ -316,9 +294,7 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
           {MONTHS.map((name, m) => (
             <MiniMonth key={m} year={year} month={m} name={name}
               holidayMap={holidayMap}
-              onDayClick={(d) => {
-                if (!isSunday(year, m, d)) openAdd(toDateStr(year, m, d));
-              }} />
+              onDayClick={(d) => openAdd(toDateStr(year, m, d))} />
           ))}
         </div>
       )}
@@ -368,17 +344,13 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
                     return (
                       <tr key={h.id} className="group hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {dayName === 'Sun' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />}
-                            <span className="text-[13px] font-semibold text-gray-900">{h.name}</span>
-                          </div>
+                          <span className="text-[13px] font-semibold text-gray-900">{h.name}</span>
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-[12.5px] font-mono text-gray-600">{formatDisplay(h.date)}</span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full"
-                            style={{ background: dayName === 'Sun' ? '#FEF2F2' : '#F9FAFB', color: dayName === 'Sun' ? '#DC2626' : '#374151' }}>
+                          <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full" style={{ background: '#F9FAFB', color: '#374151' }}>
                             {dayName}
                           </span>
                         </td>
@@ -413,8 +385,7 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
               {MONTHS.map((mn, mi) => {
                 const mHols = holidays.filter((h) => h.date.startsWith(`${year}-${String(mi + 1).padStart(2, '0')}`)).length;
                 const dim = daysInMonth(year, mi);
-                const suns = Array.from({ length: dim }, (_, i) => i + 1).filter((d) => isSunday(year, mi, d)).length;
-                const work = dim - suns - mHols;
+                const work = dim - mHols;
                 return (
                   <div key={mn} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
                     <span className="text-[11.5px] font-semibold text-gray-500 w-7">{mn.slice(0, 3)}</span>
@@ -440,17 +411,11 @@ export function HolidayCalendar({ holidays, year }: { holidays: HolidayDTO[]; ye
                   </div>
                 );
               })}
-              <div className="flex items-center gap-3 py-2 mt-1 border-t border-gray-100">
-                <span className="w-2 h-2 rounded-full bg-red-500" />
-                <span className="text-[12px] text-gray-600 flex-1">Sunday (Auto-blocked)</span>
-                <span className="text-[12px] font-bold text-gray-700 w-5 text-right">{sundayCount}</span>
-              </div>
             </div>
 
             <div className="bg-gray-900 rounded-xl p-5 text-white">
               <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-3">Business Rules</h3>
               {[
-                'Every Sunday is automatically blocked as a non-working day.',
                 'Custom holidays affect project deadlines and task scheduling.',
                 'Only Admins can add, edit, or remove holidays.',
                 'Company shutdown days block all project activities.',
@@ -499,8 +464,7 @@ function MiniMonth({ year, month, name, holidayMap, onDayClick }: {
       {/* Day headers */}
       <div className="grid grid-cols-7 px-1.5 pt-1.5">
         {DAYS_SHORT.map((d) => (
-          <div key={d} className="text-center text-[9px] font-bold pb-1"
-            style={{ color: d === 'Su' ? '#DC2626' : '#9CA3AF' }}>{d}</div>
+          <div key={d} className="text-center text-[9px] font-bold pb-1" style={{ color: '#9CA3AF' }}>{d}</div>
         ))}
       </div>
 
@@ -509,12 +473,10 @@ function MiniMonth({ year, month, name, holidayMap, onDayClick }: {
         {cells.map((day, idx) => {
           if (!day) return <div key={`empty-${idx}`} />;
           const ds       = toDateStr(year, month, day);
-          const sun      = isSunday(year, month, day);
           const holList  = holidayMap[ds] ?? [];
 
           let bg = 'transparent', txt = '#374151';
-          if (sun) { bg = '#FEF2F2'; txt = '#DC2626'; }
-          else if (holList.length > 0) {
+          if (holList.length > 0) {
             const t = holList[0].type;
             const s = TYPE_STYLE[t];
             bg = s.bg; txt = s.text;
@@ -523,11 +485,11 @@ function MiniMonth({ year, month, name, holidayMap, onDayClick }: {
           return (
             <button key={`day-${idx}`}
               onClick={() => onDayClick(day)}
-              title={sun ? 'Sunday' : holList.map((h) => h.name).join(', ') || 'Click to add holiday'}
-              className="relative flex items-center justify-center rounded text-[10px] font-semibold transition-colors"
-              style={{ height: '22px', background: bg, color: txt, cursor: sun ? 'default' : 'pointer' }}>
+              title={holList.map((h) => h.name).join(', ') || 'Click to add holiday'}
+              className="relative flex items-center justify-center rounded text-[10px] font-semibold transition-colors cursor-pointer"
+              style={{ height: '22px', background: bg, color: txt }}>
               {day}
-              {holList.length > 0 && !sun && (
+              {holList.length > 0 && (
                 <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: txt }} />
               )}
             </button>

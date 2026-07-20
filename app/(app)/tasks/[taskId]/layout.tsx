@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { TaskStatusBadge } from '@/components/hvac/TaskStatusBadge';
+import { TaskStatusBadge } from '@/components/tasks/TaskStatusBadge';
 import { formatDate } from '@/lib/utils/format';
 
 interface TaskLayoutProps {
@@ -12,7 +12,7 @@ interface TaskLayoutProps {
 export default async function TaskLayout({ children, params }: TaskLayoutProps) {
   const { taskId } = await params;
 
-  const task = await prisma.hvacTask.findUnique({
+  const task = await prisma.task.findUnique({
     where: { id: taskId },
     select: { taskId: true, taskName: true, projectName: true, status: true, plannedStartDate: true, dueDate: true },
   }).catch(() => null);

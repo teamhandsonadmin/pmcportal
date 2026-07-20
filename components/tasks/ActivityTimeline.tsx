@@ -1,6 +1,6 @@
 import { formatRelativeTime } from '@/lib/utils/format';
 import { STATUS_LABELS } from '@/lib/utils/status-rules';
-import type { ActivityEvent, TaskStatus } from '@/lib/types/hvac';
+import type { ActivityEvent, TaskStatus } from '@/lib/types/tasks';
 
 interface ActivityTimelineProps {
   events: ActivityEvent[];

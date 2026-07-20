@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
-export default function HvacNewRedirectPage() {
+export default function TaskNewRedirectPage() {
   redirect('/works');
 }

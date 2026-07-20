@@ -1,5 +1,5 @@
-import type { CategoryProgress, DependencyCategory } from '@/lib/types/hvac';
-import { CATEGORY_COLORS } from '@/lib/types/hvac';
+import type { CategoryProgress, DependencyCategory } from '@/lib/types/tasks';
+import { CATEGORY_COLORS } from '@/lib/types/tasks';
 
 const CATEGORY_LABELS: Record<DependencyCategory, string> = {
   architect:  'Architect',
