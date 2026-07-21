@@ -26,7 +26,7 @@ export default async function TaskLayout({ children, params }: TaskLayoutProps) 
         <div className="flex items-start justify-between gap-4">
           <div>
             <Link
-              href="/works"
+              href="/works/flowchart"
               className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

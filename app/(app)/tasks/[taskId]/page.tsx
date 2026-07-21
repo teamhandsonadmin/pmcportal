@@ -66,6 +66,8 @@ export default async function TaskDetailPage({ params }: Props) {
     sortOrder: item.sortOrder,
     createdAt: item.createdAt,
     commentCount: item._count.comments,
+    quantityUnit: item.quantityUnit as import('@/lib/types/tasks').QuantityUnit | null,
+    quantityValue: item.quantityValue != null ? Number(item.quantityValue) : null,
     completion: item.completion
       ? {
           id: item.completion.id,

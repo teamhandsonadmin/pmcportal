@@ -130,6 +130,7 @@ model UserProfile {
   forceLogoutAt DateTime? @map("force_logout_at")
 
   comments Comment[]
+  statusChanges DependencyStatusHistory[]
 
   @@map("user_profiles")
 }
@@ -367,12 +368,34 @@ model DependencyItem {
   sortOrder   Int                @default(0) @map("sort_order") @db.SmallInt
   createdAt   DateTime           @default(now()) @map("created_at")
 
+  // Quantity of work — describes the ITEM itself (independent of its
+  // current status), so it lives here rather than on DependencyCompletion.
+  // Both null until the first save; applies to every item across every
+  // category by deliberate choice, even ones with no obvious quantity (e.g.
+  // "Design Intent") — a generic field some items just won't use.
+  quantityUnit  QuantityUnit? @map("quantity_unit")
+  quantityValue Decimal?      @map("quantity_value") @db.Decimal(12, 2)
+
   task       Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
   completion DependencyCompletion?
   comments   Comment[]
+  statusHistory DependencyStatusHistory[]
 
   @@map("dependency_items")
   @@index([taskId, category])
+}
+
+// Fixed 8-option unit list for DependencyItem.quantityUnit, in the exact
+// order/labels given by the client — not alphabetized or reordered.
+enum QuantityUnit {
+  ROOM_AREA_WISE
+  RFT
+  SFT
+  CFT
+  SQM
+  NO
+  RMTS
+  TARGETED_QUANTITY_OF_WORK
 }
 
 model DependencyCompletion {
@@ -390,6 +413,28 @@ model DependencyCompletion {
   item DependencyItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@map("dependency_completions")
+}
+
+// Every status change a DependencyCompletion ever goes through, oldest
+// first — DependencyCompletion itself only holds the current status, so
+// this is the only place "Pending -> On Hold -> Pending" survives. Recorded
+// for every DependencyItem on every task (see updateDependencyCompletion in
+// app/actions/dependencies.ts) and surfaced via the history drawer on every
+// task's checklist (TrelloTaskDetail.tsx) — new tasks get it automatically
+// since neither side is gated to a specific task.
+model DependencyStatusHistory {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dependencyItemId String            @map("dependency_item_id") @db.Uuid
+  oldStatus        CompletionStatus? @map("old_status")
+  newStatus        CompletionStatus  @map("new_status")
+  changedBy        String?           @map("changed_by") @db.Uuid
+  changedAt        DateTime          @default(now()) @map("changed_at")
+
+  item    DependencyItem @relation(fields: [dependencyItemId], references: [id], onDelete: Cascade)
+  changer UserProfile?   @relation(fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@map("dependency_status_history")
+  @@index([dependencyItemId, changedAt])
 }
 
 // A real threaded comment on a checklist item — belongs to the ITEM

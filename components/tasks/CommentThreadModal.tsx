@@ -9,7 +9,7 @@ import {
 import { fetchCommentThread, createComment } from '@/app/actions/comments';
 import type { CommentThread, ThreadComment } from '@/lib/data/comment-thread';
 
-const CATEGORY_LABELS: Record<string, string> = {
+export const CATEGORY_LABELS: Record<string, string> = {
   architect: 'Architect',
   client: 'Client',
   consultant: 'Consultant',
@@ -22,7 +22,7 @@ function initialOf(name: string): string {
   return trimmed ? trimmed[0].toUpperCase() : '?';
 }
 
-function Avatar({ name }: { name: string }) {
+export function Avatar({ name }: { name: string }) {
   return (
     <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-[12px] font-bold text-white flex-shrink-0">
       {initialOf(name)}
@@ -35,7 +35,7 @@ function Avatar({ name }: { name: string }) {
 // per-comment emoji-response feature) were deliberately scoped OUT here —
 // see this component's usage notes — this is just the input's own emoji
 // picker, inserted into whatever's currently typed.
-function CommentInput({
+export function CommentInput({
   placeholder,
   onSend,
   autoFocus,
@@ -113,7 +113,7 @@ function CommentInput({
   );
 }
 
-function CommentRow({
+export function CommentRow({
   comment,
   isReply,
   onReply,
@@ -168,16 +168,11 @@ function CommentRow({
   );
 }
 
-interface CommentThreadModalProps {
-  dependencyItemId: string | null;
-  onClose: () => void;
-}
-
-// The one shared thread view, mounted wherever a comment affordance exists
-// (the aggregated Comments page, and every checklist item on both task-
-// detail checklist UIs) — always the same component, just opened with a
-// different dependencyItemId.
-export function CommentThreadModal({ dependencyItemId, onClose }: CommentThreadModalProps) {
+// Shared by CommentThreadModal (page-level dialog, used by the aggregated
+// Comments page) and InlineCommentThread (opens within a checklist row
+// itself, used by both task-detail checklist UIs) — same fetch/reply/post
+// logic, just rendered inside a different shell.
+export function useCommentThread(dependencyItemId: string | null) {
   const [thread, setThread] = useState<CommentThread | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -217,6 +212,21 @@ export function CommentThreadModal({ dependencyItemId, onClose }: CommentThreadM
       setThread((prev) => (prev ? { ...prev, comments: [...prev.comments, created] } : prev));
     }
   }
+
+  return { thread, loading, handleReply, handleNewComment };
+}
+
+interface CommentThreadModalProps {
+  dependencyItemId: string | null;
+  onClose: () => void;
+}
+
+// Page-level centered dialog — only used by the aggregated Comments page
+// (/works/comments) now, where there's no single "row" to open inline
+// within (each card there already IS the item). Checklist rows on the two
+// task-detail checklist UIs use InlineCommentThread instead.
+export function CommentThreadModal({ dependencyItemId, onClose }: CommentThreadModalProps) {
+  const { thread, loading, handleReply, handleNewComment } = useCommentThread(dependencyItemId);
 
   return (
     <Dialog open={!!dependencyItemId} onOpenChange={(open) => { if (!open) onClose(); }}>

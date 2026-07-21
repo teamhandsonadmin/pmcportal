@@ -25,10 +25,10 @@ function StatusBadge({ status }: { status: CompletionStatus }) {
   const chip = STATUS_CHIP[status];
   return (
     <span
-      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap"
       style={{ backgroundColor: chip.bg, color: chip.text }}
     >
-      <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ backgroundColor: chip.dot }} />
+      <chip.Icon size={11} strokeWidth={2.25} className="flex-shrink-0" />
       {chip.label}
     </span>
   );

@@ -30,6 +30,35 @@ export type DependencyCategory =
 
 export type CompletionStatus = 'YES' | 'NO' | 'ON_HOLD' | 'PENDING' | 'REVISIONS' | 'PROCEED';
 
+export type QuantityUnit =
+  | 'ROOM_AREA_WISE'
+  | 'RFT'
+  | 'SFT'
+  | 'CFT'
+  | 'SQM'
+  | 'NO'
+  | 'RMTS'
+  | 'TARGETED_QUANTITY_OF_WORK';
+
+// Fixed 8-option list, exact labels/order as specified by the client — not
+// alphabetized. Every DependencyItem gets this field regardless of category
+// (even ones with no obvious quantity, like "Design Intent") — a deliberate,
+// generic field some items just won't use.
+export const QUANTITY_UNIT_LABEL: Record<QuantityUnit, string> = {
+  ROOM_AREA_WISE: 'Room/Area-wise',
+  RFT: 'RFT',
+  SFT: 'SFT',
+  CFT: 'CFT',
+  SQM: 'Sqm',
+  NO: 'No',
+  RMTS: 'RMTS',
+  TARGETED_QUANTITY_OF_WORK: 'Targeted Quantity of work',
+};
+
+export const QUANTITY_UNIT_ORDER: QuantityUnit[] = [
+  'ROOM_AREA_WISE', 'RFT', 'SFT', 'CFT', 'SQM', 'NO', 'RMTS', 'TARGETED_QUANTITY_OF_WORK',
+];
+
 export type InventoryUnit =
   | 'PCS'
   | 'KG'
@@ -106,6 +135,8 @@ export interface DependencyItem {
   // every consumer of this type fetches it; the checklist UIs do, to badge
   // the comment icon.
   commentCount?: number;
+  quantityUnit?: QuantityUnit | null;
+  quantityValue?: number | null;
 }
 
 export interface CategoryProgress {

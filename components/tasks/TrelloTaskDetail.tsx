@@ -9,8 +9,11 @@ import {
 } from '@/app/actions/dependencies';
 import type { DependencyCategory, DependencyItem, CompletionStatus } from '@/lib/types/tasks';
 import { CATEGORY_COLORS, isItemDone } from '@/lib/types/tasks';
+import { createComment } from '@/app/actions/comments';
 import { StatusDropdown } from './StatusDropdown';
-import { CommentThreadModal } from './CommentThreadModal';
+import { InlineCommentThread, DefaultCommentBox } from './InlineCommentThread';
+import { StatusHistoryDrawer } from './StatusHistoryDrawer';
+import { QuantityControl } from './QuantityControl';
 
 /* ── Category config — colored per category so each checklist is easy to
    tell apart at a glance, reusing the same palette as the template editor. */
@@ -44,9 +47,16 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
   const [isEditing, setIsEditing] = useState(false);
   const [labelText, setLabelText] = useState(item.itemLabel);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const cleared = isItemDone(localStatus);
-  const commentCount = item.commentCount ?? 0;
+  const [commentCount, setCommentCount] = useState(item.commentCount ?? 0);
+  const isComputedQuantity = item.category === 'quantity' && (item.itemLabel === 'Pending Quantity' || item.itemLabel === 'Excess Quantity');
+
+  async function quickAddComment(body: string) {
+    const res = await createComment(item.id, body, null);
+    if (res.success) setCommentCount((c) => c + 1);
+  }
 
   function saveLabel() {
     const trimmed = labelText.trim();
@@ -77,66 +87,104 @@ function TrelloCheckItem({ item, taskId, locked }: { item: DependencyItem; taskI
   }
 
   return (
-    <div className={`flex items-start gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 group transition-colors ${isPending ? 'opacity-60' : ''}`}>
-      <div className="mt-0.5">
-        <StatusDropdown status={localStatus} disabled={locked || isPending} onChange={changeStatus} />
-      </div>
+    <div>
+      <div className={`flex items-start gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 group transition-colors ${isPending ? 'opacity-60' : ''}`}>
+        <div className="mt-0.5">
+          <StatusDropdown status={localStatus} disabled={locked || isPending} onChange={changeStatus} />
+        </div>
 
-      <div className="flex-1 min-w-0">
-        {isEditing ? (
-          <input
-            value={labelText}
-            onChange={(e) => setLabelText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') { setLabelText(item.itemLabel); setIsEditing(false); } }}
-            onBlur={saveLabel}
-            autoFocus
-            className="w-full text-[13px] text-gray-800 outline-none border-b border-gray-300 bg-transparent pb-0.5"
+        <div className="flex-1 min-w-0 flex items-center gap-3">
+          {isEditing ? (
+            <input
+              value={labelText}
+              onChange={(e) => setLabelText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') { setLabelText(item.itemLabel); setIsEditing(false); } }}
+              onBlur={saveLabel}
+              autoFocus
+              className="flex-1 min-w-0 text-[13px] text-gray-800 outline-none border-b border-gray-300 bg-transparent pb-0.5"
+            />
+          ) : (
+            <span className={`text-[13px] leading-snug flex-shrink-0 ${cleared ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+              {item.itemLabel}
+            </span>
+          )}
+
+          {/* Fills the row's own empty space — same line as the label, not a
+              new block below it. Stays available even after commenting (so
+              a 2nd, 3rd... comment doesn't require opening the full
+              thread). The comment count lives only on the right-side icon
+              now — no duplicate indicator here. */}
+          {!isEditing && !commentsOpen && (
+            <div className="flex-1 min-w-0 max-w-md">
+              <DefaultCommentBox onSend={quickAddComment} />
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <QuantityControl
+            itemId={item.id}
+            taskId={taskId}
+            quantityUnit={item.quantityUnit}
+            quantityValue={item.quantityValue}
+            disabled={locked}
+            readOnly={isComputedQuantity}
           />
-        ) : (
-          <span className={`text-[13px] leading-snug ${cleared ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-            {item.itemLabel}
-          </span>
-        )}
+          <button
+            onClick={() => setHistoryOpen(true)}
+            title="Status history"
+            className="flex items-center gap-1 h-7 px-1.5 rounded text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors text-[12px] font-medium"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setCommentsOpen((v) => !v)}
+            title="Comments"
+            className="flex items-center gap-1 h-7 px-1.5 rounded text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors text-[12px] font-medium"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+            </svg>
+            {commentCount > 0 && <span>{commentCount}</span>}
+          </button>
+
+          {!locked && !isEditing && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => setIsEditing(true)}
+                title="Edit item"
+                className="w-7 h-7 flex items-center justify-center rounded text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </button>
+              <button
+                onClick={remove}
+                title="Delete item"
+                className="w-7 h-7 flex items-center justify-center rounded text-gray-500 hover:text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center gap-1 flex-shrink-0">
-        <button
-          onClick={() => setCommentsOpen(true)}
-          title="Comments"
-          className="flex items-center gap-1 h-5 px-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-[10px]"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
-          </svg>
-          {commentCount > 0 && <span>{commentCount}</span>}
-        </button>
-
-        {!locked && !isEditing && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={() => setIsEditing(true)}
-              title="Edit item"
-              className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-            <button
-              onClick={remove}
-              title="Delete item"
-              className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
-              </svg>
-            </button>
-          </div>
-        )}
-      </div>
-
-      <CommentThreadModal dependencyItemId={commentsOpen ? item.id : null} onClose={() => setCommentsOpen(false)} />
+      {commentsOpen && (
+        <InlineCommentThread dependencyItemId={item.id} onClose={() => setCommentsOpen(false)} />
+      )}
+      <StatusHistoryDrawer
+        itemId={historyOpen ? item.id : null}
+        itemLabel={item.itemLabel}
+        currentStatus={localStatus}
+        onClose={() => setHistoryOpen(false)}
+      />
     </div>
   );
 }

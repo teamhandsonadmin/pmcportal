@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -98,6 +98,14 @@ const Icons = {
       <path d="M9 18l6-6-6-6"/>
     </svg>
   ),
+  Chevron:        ({ open }: { open: boolean }) => (
+    <svg
+      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 150ms ease' }}
+    >
+      <path d="M9 18l6-6-6-6"/>
+    </svg>
+  ),
   Logout:         () => (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -177,6 +185,24 @@ function NavItem({
   const hasBadge = (item.badge ?? 0) > 0;
   const disabled = item.disabled ?? false;
 
+  // Explicit expand/collapse state for the submenu — deliberately NOT
+  // derived from `active`/pathname on every render (that was the old
+  // behavior: the children list was only ever shown as an "accidental side
+  // effect" of route-matching, with no way to manually close it). Seeded
+  // from `active` on mount, then controlled solely by the arrow — except a
+  // fresh entry into the section (active going false -> true) always
+  // re-opens it. Tracked via React's documented "adjust state during render"
+  // pattern (a plain state variable holding the previous `active`, not a
+  // ref — refs can't be read/written during render) rather than an effect,
+  // so there's no extra render/flicker. Never auto-closed by anything else,
+  // e.g. clicking a sibling sub-item.
+  const [expanded, setExpanded] = useState(active);
+  const [prevActive, setPrevActive] = useState(active);
+  if (active !== prevActive) {
+    setPrevActive(active);
+    if (active) setExpanded(true);
+  }
+
   const inner = (
     <div
       className="flex items-center rounded-md transition-colors duration-100"
@@ -249,16 +275,28 @@ function NavItem({
 
   const link = disabled
     ? <div title={collapsed ? item.label : undefined}>{inner}</div>
-    : <Link href={item.href} title={collapsed ? item.label : undefined}>{inner}</Link>;
+    : <Link href={item.href} title={collapsed ? item.label : undefined} className="flex-1 min-w-0">{inner}</Link>;
 
-  if (!item.children || collapsed) return link;
+  const hasSubmenu = !!item.children && !collapsed;
+
+  if (!hasSubmenu) return link;
 
   return (
     <>
-      {link}
-      {active && (
+      <div className="flex items-center gap-0.5">
+        {link}
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExpanded((v) => !v); }}
+          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          title={expanded ? 'Collapse submenu' : 'Expand submenu'}
+        >
+          <Icons.Chevron open={expanded} />
+        </button>
+      </div>
+      {expanded && (
         <div className="mt-0.5 ml-[26px] pl-2.5 border-l border-gray-200 space-y-0.5">
-          {item.children.map((child) => {
+          {item.children!.map((child) => {
             const childActive = pathname.startsWith(child.href);
             return (
               <Link
