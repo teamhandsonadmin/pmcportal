@@ -9,14 +9,18 @@ import type { CompletionStatus } from '@/lib/types/tasks';
    two don't drift into two different pieces of dropdown code again. */
 
 export const STATUS_CHIP: Record<CompletionStatus, { label: string; bg: string; text: string; dot: string }> = {
-  YES:       { label: 'Yes',       bg: '#DCFCE7', text: '#15803D', dot: '#22C55E' },
+  YES:       { label: 'Issued',    bg: '#DCFCE7', text: '#15803D', dot: '#22C55E' },
   PROCEED:   { label: 'Proceed',   bg: '#CCFBF1', text: '#0F766E', dot: '#14B8A6' },
   PENDING:   { label: 'Pending',   bg: '#FEE2E2', text: '#B91C1C', dot: '#EF4444' },
   ON_HOLD:   { label: 'On Hold',   bg: '#FEF3C7', text: '#92400E', dot: '#F59E0B' },
   REVISIONS: { label: 'Revisions', bg: '#FFEDD5', text: '#C2410C', dot: '#FB923C' },
-  NO:        { label: 'No',        bg: '#FEE2E2', text: '#B91C1C', dot: '#EF4444' },
+  NO:        { label: 'Not Required', bg: '#DBEAFE', text: '#1E40AF', dot: '#3B82F6' },
 };
-export const STATUS_ORDER: CompletionStatus[] = ['YES', 'PROCEED', 'PENDING', 'ON_HOLD', 'REVISIONS', 'NO'];
+// PROCEED deliberately excluded — retired from the picker (same pattern as
+// the 'inspector' DependencyCategory: kept in STATUS_CHIP/CLEARING_STATUSES
+// below so any task that already has this status still renders and still
+// counts as done), just no longer offered as a new choice.
+export const STATUS_ORDER: CompletionStatus[] = ['YES', 'PENDING', 'ON_HOLD', 'REVISIONS', 'NO'];
 
 // Clears vs. blocks — mirrors isItemDone() in lib/types/tasks.ts.
 export const CLEARING_STATUSES: CompletionStatus[] = ['YES', 'PROCEED'];
